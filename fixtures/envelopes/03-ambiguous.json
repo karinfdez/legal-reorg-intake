@@ -1,0 +1,8 @@
+{
+  "message_id": "msg_003",
+  "source": "email",
+  "sender": "priya.nair@example.com",
+  "received_at": "2026-08-17T15:04:00Z",
+  "text": "we're restructuring the payments org soon, will confirm details",
+  "expected_outcome": "ABSTAINED"
+}

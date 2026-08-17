@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { append } from "./lib/audit.js";
 import { checkTrust } from "./steps/01-trust.js";
 import { redact } from "./steps/02-redact.js";
@@ -5,6 +9,14 @@ import { classify } from "./steps/03-classify.js";
 import { extract } from "./steps/04-extract.js";
 import { validate } from "./steps/05-validate.js";
 import { emit } from "./steps/06-emit.js";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+function loadReference(name) {
+  return JSON.parse(
+    readFileSync(join(ROOT, "fixtures", "reference", name), "utf8")
+  );
+}
 
 function auditStep(messageId, step, status, reason) {
   append({
@@ -43,8 +55,16 @@ export async function runPipeline(envelope, { authorizedSubmitters } = {}) {
     messageId
   );
 
-  const { redacted } = redact(envelope.text);
-  pass(trace, 2, "redact", "(stub)", messageId);
+  // Pass only `redacted` downstream. Never send `tokens` to the model or audit.
+  const { redacted, tokens } = redact(envelope.text);
+  const tokenCount = Object.keys(tokens).length;
+  pass(
+    trace,
+    2,
+    "redact",
+    tokenCount === 0 ? "no PII detected" : `${tokenCount} tokens replaced`,
+    messageId
+  );
 
   const classification = await classify(redacted);
   if (classification.type === "unclear") {
@@ -75,10 +95,20 @@ export async function runPipeline(envelope, { authorizedSubmitters } = {}) {
     messageId
   );
 
-  const changeset = await extract(redacted, classification);
-  pass(trace, 4, "extract", "(stub)", messageId);
+  const extraction = await extract(redacted, classification);
+  const extractDetail =
+    extraction.missing?.length > 0
+      ? `missing: ${extraction.missing.join(", ")}`
+      : `comp_change=${extraction.fields?.comp_change === true}`;
+  pass(trace, 4, "extract", extractDetail, messageId);
 
-  const validation = validate(changeset);
+  const validation = validate(extraction, {
+    type: classification.type,
+    receivedAt: envelope.received_at,
+    messageId: envelope.message_id,
+    managers: loadReference("managers.json"),
+    costCenters: loadReference("cost_centers.json"),
+  });
   if (!validation.ok) {
     const missing = validation.missing ?? [];
     auditStep(messageId, "validate", "abstain", missing.join(","));
@@ -95,7 +125,26 @@ export async function runPipeline(envelope, { authorizedSubmitters } = {}) {
       trace,
     };
   }
-  pass(trace, 5, "validate", "(stub)", messageId);
+  pass(trace, 5, "validate", "resolved", messageId);
+
+  const changeset = validation.changeset;
+  if (changeset.comp_change === true) {
+    auditStep(messageId, "route", "routed_out", "comp_change");
+    trace.push({
+      n: 6,
+      step: "route",
+      status: "ROUTED",
+      detail: "comp_change=true",
+    });
+    return {
+      outcome: "ROUTED_OUT",
+      reason: "comp_change_requires_separate_workflow",
+      question:
+        "This request includes compensation changes, which go through comp review rather than this pipeline. I can process the structural move on its own — confirm and I'll continue.",
+      changeset,
+      trace,
+    };
+  }
 
   const emitted = emit(changeset);
   pass(trace, 6, "emit", "(stub)", messageId);

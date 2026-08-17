@@ -26,6 +26,8 @@ function printResult(result) {
     console.log(`--> EMITTED ${result.id}`);
   } else if (result.outcome === "ABSTAINED") {
     console.log(`--> ABSTAINED "${result.question}"`);
+  } else if (result.outcome === "ROUTED_OUT") {
+    console.log(`--> ROUTED_OUT "${result.question}"`);
   } else {
     console.log(`--> REJECTED ${result.reason ?? ""}`);
   }

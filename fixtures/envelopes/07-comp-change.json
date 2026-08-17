@@ -1,0 +1,8 @@
+{
+  "message_id": "msg_007",
+  "source": "email",
+  "sender": "priya.nair@example.com",
+  "received_at": "2026-08-17T16:45:00Z",
+  "text": "Please move the Platform Analytics team of 6 from Jordan Hale to Maya Chen, effective October 1, 2026. They are moving from cost center CC-4100 to CC-4200. Two of the moved workers will also receive salary increases: W-4471 increase to $210,000 and W-4488 increase to $195,000.",
+  "expected_outcome": "ROUTED_OUT"
+}

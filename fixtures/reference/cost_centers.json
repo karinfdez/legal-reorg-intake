@@ -1,0 +1,5 @@
+[
+  { "id": "CC-4100", "code": "CC-4100", "active": true },
+  { "id": "CC-4200", "code": "CC-4200", "active": true },
+  { "id": "CC-4300", "code": "CC-4300", "active": false }
+]

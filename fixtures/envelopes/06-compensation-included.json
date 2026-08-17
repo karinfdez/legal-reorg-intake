@@ -1,0 +1,8 @@
+{
+  "message_id": "msg_006",
+  "expected_outcome": "EMITTED",
+  "source": "email",
+  "sender": "priya.nair@example.com",
+  "received_at": "2026-08-17T11:12:00Z",
+  "text": "Hi — confirming the Platform Analytics move. The team of 6 shifts from Jordan Hale to Maya Chen effective October 1, 2026, moving from cost center CC-4100 to CC-4200. No comp changes as part of this.\n\nFor your records, Maya's current base is $195,000 and her direct line is 415-555-0182. Jordan can be reached at jordan.hale@example.com if you need the current org chart. One of the transferring workers is W-4471.\n\nPlease process the structural move only."
+}

@@ -10,6 +10,8 @@ Gates run in order and stop on failure:
 trust → redact → classify → extract → validate → emit
 ```
 
+End-to-end picture (Slice B included, not built): [Figure 1](docs/design.md#31-end-to-end-path).
+
 The model only returns **values** (forced-tool classify, then extract). Code decides **actions**. Compensation is never written here.
 
 | Outcome | Meaning |

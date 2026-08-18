@@ -18,6 +18,19 @@ This system turns that freeform message into a **validated ChangeSet** (“what 
 
 The prototype demonstrates the judgment-heavy half: **capture → trust → redact → classify → extract → four explicit outcomes.** It never touches a target system.
 
+There is no single correct architecture. The brief grades reasoning: what we assumed, what we refused to build, and where a human stays. Those answers are below; the working log is `docs/decisions.md`.
+
+### Constraints (from the brief)
+
+| Constraint | What we did |
+| --- | --- |
+| Reorgs arrive as **freeform text** (Slack, email, docs). No structured event to subscribe to. | Envelope `{ message_id, source, sender, received_at, text }`. `text` is untrusted. Fixtures stand in for connectors. |
+| At least one target system **has no API**; a human must key the change. | Slice B step `mode: manual_entry` (planning tool in Figure 2). Authenticated work order until attested. Designed, not built. |
+| Data includes **compensation and PII**. | Redact before the model (salary, SSN, account, email, phone). Token map never persisted, audited, or sent to the model. Comp is a boolean; amount never extracted. `comp_change === true` → **ROUTED_OUT**, not a write in this pipeline. |
+| Some steps need **human approval** before downstream work. Decide which, and where it lives. | Table in **3.4**. Short version: clarification and extraction-confirm in Slice A; GL/control attestation and API-less entry on the **graph step** (policy as data). Approval is not a model tool. |
+
+**Notes (from the brief), how we followed them:** if something was unclear we **stated an assumption and kept building** (§6). **Why we didn’t build it** is a deliverable — §2 non-goals and §4 alternatives. **§8** is where AI shaped a decision and where it was overridden.
+
 ---
 
 ## 2. Goals and non-goals
@@ -182,17 +195,22 @@ Writes:
 
 ### 3.4 Where a human stays in the loop — and why
 
-| Moment | Why a human | What they do |
-| --- | --- | --- |
-| Incomplete request or failed model call | Must not invent a date, and must not emit a half-written ChangeSet | Pending record is written; human answers fields; validate+emit resume. No parked *execution*. |
-| Compensation on the request | Different approval chain; this pipeline must not hold salary | Comp review, or confirm “structural move only” |
-| Step with **no API** (homework constraint) | Someone must key the change | Authenticated work order; `manual_entry` until attested |
-| GL / mapping / other control steps | Approval is a control, not UX | Named owner attests (`awaiting_attestation → completed`) |
-| After write | Attestation is a **claim**, not proof | Reconciliation read-back: did the value land? |
+The brief asks us to **decide which steps require approval and where that approval lives.** Not every step. Controls and missing APIs stay; capture guesses do not get rubber-stamped by the model.
 
-If compensation had to be in scope: **same mechanism** as the API-less tool — `mode: manual_entry` with a comp approver. Different reason (sensitivity vs missing API). Still no salary field on the automated path. That is a stronger answer than “we excluded it.”
+| Step | Approval? | Where it lives |
+| --- | --- | --- |
+| Who may submit | No human click — **allowlist** | Slice A `checkTrust` (code), before any model call |
+| Incomplete / unclear / failed extract | Yes: **clarification**, not approval of a write | Slice A pending record; prototype CLI `pending`/`answer`; production Slack task to the **ops owner** |
+| Compensation on the request | Yes, but **not here** | **ROUTED_OUT** to comp review. Confirm-and-continue (structural move only) is a second submit, not built |
+| Extraction confirmation (“is this ChangeSet right?”) | Yes until accuracy data exists | After **EMITTED**, before Slice B starts. Candidate to remove first (§6) |
+| Cost centre exists in GL | Yes — **control**, not UX | Graph field on that step: `awaiting_attestation` → named owner (FP&A / Controllership) |
+| HR write (manager, CC, headcount) | After GL parent is `completed`; attest if the graph says so | Same mechanism: policy on the step, not a deploy |
+| Planning tool (no API) | Human **is** the write | `mode: manual_entry` until attested |
+| After any write | Attestation is a **claim** | Reconciliation read-back: did the value land? |
 
 Production attestation belongs in Slack, where approvers already work. The click must authenticate the actor; it is an authorization event, not a notification ack.
+
+If compensation had to be in scope: **same mechanism** as the API-less tool — `mode: manual_entry` with a comp approver. Different reason (sensitivity vs missing API). Still no salary field on the automated path. That is a stronger answer than “we excluded it.”
 
 Abstention resume (pending record, `change_id`, why this is not Temporal) is in **3.2**. Who gets the Slack task is below.
 

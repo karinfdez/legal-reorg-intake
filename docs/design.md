@@ -75,6 +75,19 @@ freeform message
 
 **Not used:** an orchestrator-worker or ReAct loop. Ordering is a correctness constraint (a cost centre must exist in the GL before HR can reference it). A nondeterministic executor cannot be gated or audited.
 
+![End-to-end: Slice A (built) and Slice B (designed)](architecture.png)
+
+*Figure 1. End-to-end. Teal = code (or a completed graph step). Purple = model call. Amber = waiting on a human. Grey = input, blocked, or audit. **Slice A is implemented. Slice B is design-only** — the four propagation boxes are an example graph, not the only legal sequence.*
+
+Read the picture the same way as the rest of this doc:
+
+- **Looking up** “Maya Chen” / CC-4100 is Slice A **validate** (fixture tables). Slice B steps 1–2 are **API writes** of those IDs, not the lookup.
+- **REJECTED** is trust. **ABSTAINED → pending** is classify or validate (the dashed note is compressed onto the left).
+- **ROUTED_OUT** (comp) is not drawn; it sits between validate and emit when `comp_change === true`.
+- The audit bar is `out/audit.jsonl` today — same events, no payload text. It is not a notification (see below).
+
+Keep this file in **git**, next to the code. A Google Doc is a fine extra for emailing a hiring manager; it is not a replacement. Reviewers clone the repo.
+
 ### 3.2 Slice A — capture to validated ChangeSet (prototype)
 
 Components and interfaces:
@@ -126,7 +139,7 @@ flowchart TD
   route -->|in scope| emitted
 ```
 
-*Figure 1. Slice A as implemented in the prototype (`node src/cli.js --all`). Trust does not read `envelope.text`. The redact token map is not passed to the model and is not written to the audit log. Classify and extract are forced-tool model calls; every other node is code.*
+*Figure 2. Slice A as implemented in the prototype (`node src/cli.js --all`). Trust does not read `envelope.text`. The redact token map is not passed to the model and is not written to the audit log. Classify and extract are forced-tool model calls; every other node is code. Figure 1 is the same pipeline with Slice B attached.*
 
 Fixtures are a regression suite (`expected_outcome` on each file). `source` is pretend ingest; `expected_outcome` is the answer key for what the pipeline should decide after that. `--all` succeeds when 02 is rejected and 07 is routed out. Manager/CC lookup is **validate** (Slice A): 01 resolves Hale/Chen and CC-4100/4200; 09 abstains on two Alex Riveras; **12** abstains on inactive CC-4300. Slice B would *write* those IDs later; it does not do the matching. Full list is in `README.md`.
 
@@ -186,7 +199,7 @@ flowchart TD
   hr --> attest --> plan --> recon
 ```
 
-*Figure 2. Example Slice B graph for one team move — design only, not executed in this build. Edges mean “must complete before.” Attestation is a control; `manual_entry` exists because the planning tool has no API. Contents would come from FP&A / HR Ops interviews. Compensation writes are not on this path.*
+*Figure 3. Example Slice B graph for one team move — design only, not executed in this build. Same idea as the right half of Figure 1 (a different example sequence is fine: graph contents come from FP&A / HR Ops interviews). Edges mean “must complete before.” Attestation is a control; `manual_entry` exists because the planning tool has no API. Compensation writes are not on this path.*
 
 Writes:
 

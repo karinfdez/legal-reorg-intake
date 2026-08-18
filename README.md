@@ -44,18 +44,68 @@ node scripts/test-redact.js
 
 `--all` compares each fixture’s outcome to its `expected_outcome`. A fixture that is *supposed* to be rejected matching is success.
 
-### Missing date → human answers
+Exit codes: `0` for EMITTED / ABSTAINED / ROUTED_OUT, `1` for REJECTED or unknown `change_id`.
+
+## Worked example: missing date → human answers
+
+Fixture 08 is a complete team move except the date is “next quarter.” The pipeline must not invent a calendar date. `change_id` is derived from `message_id` (`msg_008` → `chg_60b3eb89`).
 
 ```bash
 node src/cli.js fixtures/envelopes/08-missing-date.json
-node src/cli.js pending
-node src/cli.js answer <change_id> --effective-date 2026-10-01
+```
+
+```
+[1] trust      PASS      sender=priya.nair@example.com role=hr_business_partner
+[2] redact     PASS      no PII detected
+[3] classify   PASS      type=team_move confidence=clear
+[4] extract    PASS      missing: effective_date
+[5] validate   ABSTAIN   missing: effective_date
+--> ABSTAINED chg_60b3eb89 "What is the effective date for the Platform Analytics team move?"
+```
+
+Nothing is written under `out/changesets/`. A pending record is.
+
+```bash
 node src/cli.js pending
 ```
 
-`pending` lists open clarifications. `answer` merges fields (kebab-case flags → snake_case) and re-runs only validate and emit.
+```
+change_id     type       missing         asked_at                  age
+chg_60b3eb89  team_move  effective_date  2026-08-18T00:21:56.027Z  0d
+```
 
-Exit codes: `0` for EMITTED / ABSTAINED / ROUTED_OUT, `1` for REJECTED or unknown `change_id`.
+The ops owner gets the date from the submitter and patches the field. Classify and extract are **not** re-run.
+
+```bash
+node src/cli.js answer chg_60b3eb89 --effective-date 2026-10-01
+```
+
+```
+[5] validate   PASS      resolved
+[6] emit       PASS      wrote chg_60b3eb89
+--> EMITTED chg_60b3eb89 (resolved from pending)
+```
+
+```bash
+node src/cli.js pending
+```
+
+```
+(no pending clarifications)
+```
+
+The ChangeSet is now in `out/changesets/chg_60b3eb89.json` (no email body). Re-running the same inbound message returns **EMITTED** with `(already emitted)` and does not rewrite the file.
+
+Unauthorized senders never reach the model:
+
+```bash
+node src/cli.js fixtures/envelopes/02-unauthorized-sender.json
+```
+
+```
+[1] trust      FAIL      unauthorized_sender
+--> REJECTED unauthorized_sender
+```
 
 ## Fixtures
 

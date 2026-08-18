@@ -1,6 +1,6 @@
 # Reorg change pipeline
 
-FDE take-home (Agentic-Driven Reorgs). **Slice A is implemented:** one freeform Slack/email becomes a validated ChangeSet, or the pipeline asks a human. **It never touches a target system.** Slice B (dependency graph / orchestrator) is designed, not built — see [docs/design.md](docs/design.md).
+FDE take-home (Agentic-Driven Reorgs). **Slice A** turns one freeform Slack/email into a validated ChangeSet, or asks a human. **Slice B** walks a declared graph of stub writes and human gates. Slice B is deterministic code — **no model call**. Stub adapters log the payload they would send; they never make HTTP. See [docs/design.md](docs/design.md).
 
 ## How it works
 
@@ -10,7 +10,7 @@ Gates run in order and stop on failure:
 trust → redact → classify → extract → validate → emit
 ```
 
-End-to-end picture (Slice B included, not built): [Figure 1](docs/design.md#31-end-to-end-path).
+End-to-end picture: [Figure 1](docs/design.md#31-end-to-end-path).
 
 The model only returns **values** (forced-tool classify, then extract). Code decides **actions**. Compensation is never written here.
 
@@ -39,10 +39,25 @@ npm install
 ## Run
 
 ```bash
-node src/cli.js --all                                    # every case in fixtures/envelopes/
-node src/cli.js fixtures/envelopes/01-team-move-clean.json
+# Slice A — needs ANTHROPIC_API_KEY (unauthorized fixtures do not call the model)
 node scripts/test-redact.js
+node src/cli.js --all
+node src/cli.js fixtures/envelopes/01-team-move-clean.json   # → chg_e81290fd
+
+# Slice A — human fills a missing field (after 08 has abstained)
+node src/cli.js pending
+node src/cli.js answer chg_60b3eb89 --effective-date 2026-10-01
+
+# Slice B — no model. test-slice-b.js does not need an emitted ChangeSet.
+node scripts/test-slice-b.js
+node src/cli.js propagate chg_e81290fd
+node src/cli.js attest chg_e81290fd update_headcount_plan --by dana.wu
+node src/cli.js approve chg_e81290fd update_allocation_rules --by dana.wu     # rejected (fpna)
+node src/cli.js approve chg_e81290fd update_allocation_rules --by aisha.rahman
+node src/cli.js status chg_e81290fd
 ```
+
+`propagate` needs `out/changesets/chg_e81290fd.json` from fixture **01**. `test-slice-b.js` writes its own ChangeSet and checks the same sequence. Full walkthroughs are below.
 
 **All cases live in [`fixtures/envelopes/`](fixtures/envelopes/).** Each JSON file is one inbound message plus an `expected_outcome`. `--all` runs them in filename order and checks that field. To try the next one yourself:
 
@@ -65,7 +80,7 @@ node src/cli.js fixtures/envelopes/<file>.json
 | [`11-model-timeout.json`](fixtures/envelopes/11-model-timeout.json) | `msg_011` | Forced timeout; no half ChangeSet | ABSTAINED |
 | [`12-inactive-cost-center.json`](fixtures/envelopes/12-inactive-cost-center.json) | `msg_012` | Destination **CC-4300** is in the list but `active: false` (validate, not Slice B) | ABSTAINED |
 
-Allowlist used by trust: [`fixtures/reference/authorized_submitters.json`](fixtures/reference/authorized_submitters.json) (Priya Nair HRBP, Sam Okonkwo legal_ops).
+Allowlist used by trust: [`fixtures/reference/authorized_submitters.json`](fixtures/reference/authorized_submitters.json) (Priya Nair HRBP, Sam Okonkwo legal_ops). Slice B also reads roles from that file (Dana Wu `fpna` attests; Aisha Rahman `finance_owner` approves). Those two cannot submit Slice A (`can_submit: false`).
 
 `--all` compares each file’s outcome to `expected_outcome`. A fixture that is *supposed* to be rejected matching is success.
 
@@ -155,12 +170,29 @@ This list is that folder — not Slack, not email.
 
 The ChangeSet is now in `out/changesets/chg_60b3eb89.json` (no email body). Re-running the same inbound message returns **EMITTED** with `(already emitted)` and does not rewrite the file.
 
+## Propagate a ChangeSet (Slice B)
+
+No model. Order comes from [`graph/team_move.json`](graph/team_move.json). After Slice A has written a ChangeSet (fixture **01** → `chg_e81290fd`):
+
+```bash
+node src/cli.js propagate chg_e81290fd
+node src/cli.js propagate chg_e81290fd   # idempotent: no adapter re-runs
+node src/cli.js attest chg_e81290fd update_headcount_plan --by dana.wu
+node src/cli.js approve chg_e81290fd update_allocation_rules --by dana.wu
+# rejected, wrong role (fpna ≠ finance_owner)
+node src/cli.js approve chg_e81290fd update_allocation_rules --by aisha.rahman
+node src/cli.js status chg_e81290fd
+```
+
+First `propagate` completes the two API steps (GL mapping, HR assignment), prints a work order for the planning tool, and leaves allocation **blocked**. Attest completes the manual step; allocation then waits for a `finance_owner`. Dana is rejected; Aisha completes it.
+
 ## On disk (`out/`, gitignored)
 
 | Path | What |
 | --- | --- |
-| `out/audit.jsonl` | Step trail. Not a notification. |
+| `out/audit.jsonl` | Step trail. Not a notification. Slice B status lines add `change_id`, `step_id`, `from_status`, `to_status`. Approvals are `event: "approval_recorded"`, not a fake status. |
 | `out/pending/<change_id>.json` | Parked clarification. No `envelope.text`. |
 | `out/changesets/<change_id>.json` | Emitted ChangeSet. Idempotent: same `message_id` does not write a second file. |
+| `out/state/<change_id>.json` | Slice B per-step status. A completed step is never re-run. |
 
 `change_id` is `chg_` + first 8 hex chars of `sha256(message_id)`. The filename is that id, not the fixture name (`01-team-move-clean.json`). Open the JSON and read `source.message_id` (changesets) or `correlation.message_id` (pending) to match it to an envelope.

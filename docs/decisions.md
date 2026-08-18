@@ -38,18 +38,22 @@ Working log from the build. Raw material for `docs/design.md` — not the design
 - **Past effective dates get `retroactive_effective_date` on the ChangeSet, not a block.** Whether they are allowed is a close-calendar / Controllership rule this slice does not have.
 
 **Slice B / propagation**
-- **Policy lives as data on the step (designed, not built).** Approvers are a field, not an orchestrator branch, so FP&A can change an owner without a deploy.
-- **Graph *contents* are not engineering knowledge (designed, not built).** They come from FP&A / HR Ops interviews; engineering owns schema, orchestrator, and gating.
-- **Attestation is `awaiting_attestation → completed` with actor and timestamp (designed, not built).** Production: authenticated Slack click — an authorization event, not a notification ack.
-- **Attestation is a claim, not proof (designed, not built).** It unblocks; reconciliation read-back checks the value landed.
-- **Write absolute values, never deltas (designed, not built).** `setHeadcount(org, 16)` is idempotent; `adjustHeadcount(org, +6)` corrupts on retry.
-- **Prefer loud failure (designed, not built).** Double-counted headcount shows up in a rollup; orphaned headcount looks fine until close.
+- **Policy lives as data on the step.** Approvers are a field, not an orchestrator branch, so FP&A can change an owner without a deploy. `approve` checks `approval.role` against `authorized_submitters.json`.
+- **Graph *contents* are not engineering knowledge.** They live in `graph/<change_type>.json` from FP&A / HR Ops interviews; engineering owns schema, orchestrator, and gating.
+- **Approval is an event, not a status.** `approve` writes `event: "approval_recorded"` (actor + ts) and `approved_at`. The status change is `awaiting_approval → completed` when the write runs. `approved` is not in the status enum.
+- **Attestation is `awaiting_attestation → completed` with actor and timestamp.** Prototype: `attest --by`. Production: authenticated Slack click — an authorization event, not a notification ack.
+- **Attestation is a claim, not proof.** It unblocks; reconciliation read-back (not built) would check the value landed.
+- **Write absolute values, never deltas.** Adapter payloads copy ChangeSet fields; they do not compute `+6`.
+- **Atomicity inside a manual step is instructed, not enforced.** The planning tool has no API; `instructions` tell the human not to split the decrement/increment. No `atomic_with` field — we cannot observe what they type.
+- **Prefer loud failure.** Double-counted headcount shows up in a rollup; orphaned headcount looks fine until close.
+- **No model call in Slice B.** `topoSort` + `walk` are deterministic code. Stubs in `src/lib/adapters.js` log the payload they would send; real integrations replace that file only.
+- **Idempotency is the `completed` guard.** `execution_key` records which `${change_id}:${step_id}` ran; it is not a second skip check.
 
 **Scope**
 - **This pipeline never writes compensation.** `comp_change` is a boolean, never an amount; `true` → `ROUTED_OUT` after validate. Tokenize-and-discard only works if salary is never a write here.
 - **No UI.** CLI traces and text work orders are more reviewable in the time box than a form.
 - **Connectors are not built.** Fixtures pretend Slack/email already stamped `source` and `sender`.
-- **Slice B orchestrator is not built.** Designed; prototype stops at a validated ChangeSet.
+- **Real HTTP, retries, timeouts, escalation, parallel walks, and rollback are not built.** Stub adapters and a serial `walk` are enough to show gating; each is a one-line TODO on the orchestrator.
 
 ## AI: shaped / overridden
 

@@ -1,0 +1,52 @@
+{
+  "change_type": "team_move",
+  "description": "Propagation steps for a team moving between managers and cost centres. Authored by the FP&A and HR Ops owners who hold this sequence today; the engineering deliverable is the schema and the orchestrator, not these contents.",
+  "steps": [
+    {
+      "id": "create_cost_centre_mapping",
+      "label": "Create GL mapping for destination cost centre",
+      "system": "gl_accounting",
+      "owner": "finance_ops",
+      "mode": "api",
+      "depends_on": [],
+      "dependency_reason": "none — this is the root step",
+      "fields": ["cost_center_to_id", "effective_date"]
+    },
+    {
+      "id": "update_worker_assignment",
+      "label": "Reassign workers to new manager and cost centre",
+      "system": "hris",
+      "owner": "hr_ops",
+      "mode": "api",
+      "depends_on": ["create_cost_centre_mapping"],
+      "dependency_reason": "hard — the HR system cannot reference a cost centre that does not exist in the GL. Salary charges would post to an unrecognised cost centre and land in suspense.",
+      "fields": ["worker_ids", "manager_to_id", "cost_center_to_id", "effective_date"]
+    },
+    {
+      "id": "update_headcount_plan",
+      "label": "Move headcount between org plans",
+      "system": "planning_tool",
+      "owner": "fpna",
+      "mode": "manual_entry",
+      "depends_on": ["update_worker_assignment"],
+      "dependency_reason": "soft — the HR system is the system of record for headcount. The plan should reflect reality, not lead it.",
+      "manual_reason": "no API available in this environment; a human keys the change",
+      "fields": ["manager_from_id", "manager_to_id", "worker_count", "effective_date"],
+      "instructions": "Decrement the source org plan and increment the destination org plan in the same transaction. Do not split these — a window where the total does not balance leaves headcount with no budget home, which is a silent error."
+    },
+    {
+      "id": "update_allocation_rules",
+      "label": "Update cost allocation rules",
+      "system": "gl_accounting",
+      "owner": "fpna",
+      "mode": "api",
+      "depends_on": ["update_headcount_plan"],
+      "dependency_reason": "hard — allocation drivers read from the headcount plan. Running this before the plan is updated allocates shared costs to the wrong cost centre, and the error surfaces at close.",
+      "approval": {
+        "role": "finance_owner",
+        "reason": "this step writes to GL mappings and is inside SOX change-management scope. Approval must be recorded with actor and timestamp as audit evidence."
+      },
+      "fields": ["cost_center_from_id", "cost_center_to_id", "effective_date"]
+    }
+  ]
+}

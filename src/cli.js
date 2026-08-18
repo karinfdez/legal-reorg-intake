@@ -7,6 +7,13 @@ import "dotenv/config";
 
 import { listPending } from "./lib/pending.js";
 import { answerPending, runPipeline } from "./pipeline.js";
+import {
+  approveStep,
+  attestStep,
+  formatStatusTable,
+  propagate,
+  statusOf,
+} from "./slice-b/orchestrator.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ENVELOPES_DIR = join(ROOT, "fixtures", "envelopes");
@@ -72,6 +79,10 @@ function printUsage() {
     "  node src/cli.js answer <id> --effective-date 2026-10-01"
   );
   console.error("                                 Fill in a missing field and finish that change");
+  console.error("  node src/cli.js propagate <id>    Walk the Slice B graph for an emitted ChangeSet");
+  console.error("  node src/cli.js status <id>       Print step status without executing");
+  console.error("  node src/cli.js attest <id> <step> --by <actor> [--note ...]");
+  console.error("  node src/cli.js approve <id> <step> --by <actor>");
 }
 
 // --all doubles as the regression suite. Each fixture declares the outcome it
@@ -210,6 +221,98 @@ function parseAnswerArgs(argv) {
   return { changeId, fields, actor };
 }
 
+function printPropagation(result) {
+  for (const order of result.workOrders ?? []) {
+    console.log(order);
+    console.log("");
+  }
+  console.log(formatStatusTable(result.graph, result.state));
+  const s = result.summary;
+  if (s) {
+    console.log("");
+    console.log(
+      `completed=${s.completed}  blocked=${s.blocked}  awaiting=${s.awaiting}  failed=${s.failed}`
+    );
+  }
+}
+
+function parseNamedArgs(argv, { usage } = {}) {
+  const positional = [];
+  const flags = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+    if (!token.startsWith("--")) {
+      positional.push(token);
+      continue;
+    }
+    let flag = token.slice(2);
+    let value;
+    const eq = flag.indexOf("=");
+    if (eq >= 0) {
+      value = flag.slice(eq + 1);
+      flag = flag.slice(0, eq);
+    } else {
+      value = argv[i + 1];
+      if (value === undefined || value.startsWith("--")) {
+        throw new Error(usage ?? `Flag --${flag} requires a value.`);
+      }
+      i += 1;
+    }
+    flags[kebabToSnake(flag)] = value;
+  }
+  return { positional, flags };
+}
+
+function runPropagateCommand(changeId) {
+  if (!changeId || changeId.startsWith("--")) {
+    throw new Error("Usage: node src/cli.js propagate <change_id>");
+  }
+  printPropagation(propagate(changeId));
+}
+
+function runStatusCommand(changeId) {
+  if (!changeId || changeId.startsWith("--")) {
+    throw new Error("Usage: node src/cli.js status <change_id>");
+  }
+  printPropagation(statusOf(changeId));
+}
+
+function runAttestCommand(argv) {
+  const { positional, flags } = parseNamedArgs(argv, {
+    usage: "Usage: node src/cli.js attest <change_id> <step_id> --by <actor> [--note ...]",
+  });
+  const [changeId, stepId] = positional;
+  if (!changeId || !stepId || !flags.by) {
+    throw new Error(
+      "Usage: node src/cli.js attest <change_id> <step_id> --by <actor> [--note ...]"
+    );
+  }
+  printPropagation(attestStep(changeId, stepId, { actor: flags.by, note: flags.note }));
+}
+
+function runApproveCommand(argv) {
+  const { positional, flags } = parseNamedArgs(argv, {
+    usage: "Usage: node src/cli.js approve <change_id> <step_id> --by <actor>",
+  });
+  const [changeId, stepId] = positional;
+  if (!changeId || !stepId || !flags.by) {
+    throw new Error(
+      "Usage: node src/cli.js approve <change_id> <step_id> --by <actor>"
+    );
+  }
+  try {
+    printPropagation(approveStep(changeId, stepId, { actor: flags.by }));
+  } catch (err) {
+    if (err.code === "WRONG_ROLE" && err.result) {
+      console.error(err.message);
+      printPropagation(err.result);
+      process.exitCode = 1;
+      return;
+    }
+    throw err;
+  }
+}
+
 async function main() {
   const arg = process.argv[2];
   if (!arg) {
@@ -228,6 +331,26 @@ async function main() {
     const result = answerPending(changeId, fields, { actor });
     printResult(result);
     process.exitCode = result.outcome === "REJECTED" ? 1 : 0;
+    return;
+  }
+
+  if (arg === "propagate") {
+    runPropagateCommand(process.argv[3]);
+    return;
+  }
+
+  if (arg === "status") {
+    runStatusCommand(process.argv[3]);
+    return;
+  }
+
+  if (arg === "attest") {
+    runAttestCommand(process.argv.slice(3));
+    return;
+  }
+
+  if (arg === "approve") {
+    runApproveCommand(process.argv.slice(3));
     return;
   }
 

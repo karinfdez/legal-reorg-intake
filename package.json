@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Slice A: turn one freeform reorg message into a structured ChangeSet, or abstain. Never touches a target system.",
+  "description": "Turn one freeform reorg message into a ChangeSet (Slice A), then walk a declared graph of stub writes and human gates (Slice B). Never calls a model in Slice B.",
   "engines": {
     "node": ">=20"
   },

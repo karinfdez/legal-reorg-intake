@@ -6,5 +6,15 @@
   {
     "email": "sam.okonkwo@example.com",
     "role": "legal_ops"
+  },
+  {
+    "email": "dana.wu@example.com",
+    "role": "fpna",
+    "can_submit": false
+  },
+  {
+    "email": "aisha.rahman@example.com",
+    "role": "finance_owner",
+    "can_submit": false
   }
 ]

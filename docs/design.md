@@ -1,7 +1,7 @@
 # Reorg change pipeline — design doc
 
 **Role context:** FDE take-home (Agentic-Driven Reorgs). Time-boxed prototype + this document.  
-**Prototype:** `reorg-pipeline` (Node 20 CLI). Slice A is functional. Slice B is designed, not built.  
+**Prototype:** `reorg-pipeline` (Node 20 CLI). Slice A is functional. Slice B walks a declared graph with stub adapters (no model, no HTTP).  
 **Demo:** `node src/cli.js --all`
 
 This document is the submission. `docs/decisions.md` is the working log it was distilled from.
@@ -75,9 +75,9 @@ freeform message
 
 **Not used:** an orchestrator-worker or ReAct loop. Ordering is a correctness constraint (a cost centre must exist in the GL before HR can reference it). A nondeterministic executor cannot be gated or audited.
 
-![End-to-end: Slice A (built) and Slice B (designed)](architecture.png)
+![End-to-end: Slice A (built) and Slice B (stub adapters)](architecture.png)
 
-*Figure 1. End-to-end. Teal = code (or a completed graph step). Purple = model call. Amber = waiting on a human. Grey = input, blocked, or audit. **Slice A is implemented. Slice B is design-only** — the four propagation boxes are an example graph, not the only legal sequence.*
+*Figure 1. End-to-end. Teal = code (or a completed graph step). Purple = model call. Amber = waiting on a human. Grey = input, blocked, or audit. **Slice A and Slice B are both implemented** — Slice B adapters are stubs (no HTTP). The four propagation boxes are an example graph, not the only legal sequence.*
 
 Read the picture the same way as the rest of this doc:
 
@@ -174,7 +174,7 @@ The pending file does **not** store `envelope.text` or the redaction token map �
 
 Logs and notifications are **two pipes**. A log tells you the step failed. A Slack task tells **one person** to answer “which Alex Rivera?” Without that second pipe, a jsonl file in `out/` is only useful if someone opens it.
 
-### 3.3 Slice B — validation to propagation (designed, not built)
+### 3.3 Slice B — validation to propagation
 
 The company’s actual problem is order, not parsing. The graph is **data**, not a prompt:
 
@@ -199,12 +199,17 @@ flowchart TD
   hr --> attest --> plan --> recon
 ```
 
-*Figure 3. Example Slice B graph for one team move — design only, not executed in this build. Same idea as the right half of Figure 1 (a different example sequence is fine: graph contents come from FP&A / HR Ops interviews). Edges mean “must complete before.” Attestation is a control; `manual_entry` exists because the planning tool has no API. Compensation writes are not on this path.*
+*Figure 3. Example Slice B graph for one team move — executed by `node src/cli.js propagate` against `graph/team_move.json`. Same idea as the right half of Figure 1 (a different example sequence is fine: graph contents come from FP&A / HR Ops interviews). Edges mean “must complete before.” Attestation is a control; `manual_entry` exists because the planning tool has no API. Compensation writes are not on this path. Adapters are stubs: they log the payload they would send.*
 
 Writes:
 
 - **Absolute values, never deltas.** `setHeadcount(org, 16)` is idempotent; `adjustHeadcount(org, +6)` corrupts on retry.
 - **Prefer loud failures.** Double-counted headcount shows up in a rollup; orphaned headcount looks fine until close.
+- **Atomicity inside a manual step is instructed, not enforced.** `update_headcount_plan` tells the human not to split the decrement and increment. This system cannot observe the planning tool, so it cannot keep that promise in code. There is no `atomic_with` field — an empty one would look like a guarantee the orchestrator does not keep.
+
+Approval is an **event**, not a status. `approve` writes `event: "approval_recorded"` (actor + timestamp) and sets `approved_at`. The status change that follows is `awaiting_approval → completed` when the adapter runs. `approved` is not a resting state.
+
+Prototype: `node src/cli.js propagate <change_id>` walks `graph/<type>.json`, writes `out/state/<change_id>.json`, and is safe to re-run (`${change_id}:${step_id}` never executes twice). `attest` and `approve` are the human gates. Adapters stub in `src/lib/adapters.js`. Not built: real HTTP, retries, timeouts, escalation, parallel execution, rollback.
 
 ### 3.4 Where a human stays in the loop — and why
 
@@ -312,11 +317,13 @@ Smaller, named: concurrent reorgs on the same CC (last-write-wins in a prototype
 
 ```bash
 cd ~/Documents/Projects/legal-reorg-intake
-node scripts/test-redact.js          # PII / ID survival
-node src/cli.js --all                # fixtures vs expected_outcome
+node scripts/test-redact.js              # PII / ID survival
+node src/cli.js --all                    # fixtures vs expected_outcome
+node scripts/test-slice-b.js             # graph walk, no model
+node src/cli.js propagate chg_e81290fd   # after 01 has emitted
 ```
 
-See `README.md` for setup, the `pending` / `answer` walkthrough, and the full fixture list (01–12). Extract, validate, emit, and pending resume are implemented; Slice B is not. Manager and cost-centre tables are consulted in **validate**, not in the graph.
+See `README.md` for setup, the `pending` / `answer` walkthrough, Slice B `propagate` / `attest` / `approve`, and the full fixture list (01–12). Manager and cost-centre tables are consulted in **validate**, not in the graph.
 
 ---
 

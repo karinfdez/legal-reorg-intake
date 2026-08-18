@@ -26,7 +26,7 @@ export function checkTrust(envelope, { authorizedSubmitters } = {}) {
           entry.email.trim().toLowerCase() === senderKey
       )
     : undefined;
-  if (!authorized) {
+  if (!authorized || authorized.can_submit === false) {
     return { ok: false, reason: "sender_not_authorized" };
   }
 

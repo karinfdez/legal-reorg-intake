@@ -29,7 +29,9 @@ function printResult(result) {
       : result.resolved_from_pending
         ? " (resolved from pending)"
         : "";
-    console.log(`--> EMITTED ${result.id}${suffix}`);
+    const messageId = result.changeset?.source?.message_id;
+    const ids = messageId ? `${result.id}  ${messageId}` : result.id;
+    console.log(`--> EMITTED ${ids}${suffix}`);
   } else if (result.outcome === "ABSTAINED") {
     const id = result.change_id ? `${result.change_id} ` : "";
     console.log(`--> ABSTAINED ${id}"${result.question}"`);
@@ -142,9 +144,11 @@ function printPendingTable() {
 
   records.forEach((record, index) => {
     const id = record.change_id ?? "";
+    const messageId = record.correlation?.message_id;
+    const ids = messageId ? `${id}  ${messageId}` : id;
     const missing = record.missing ?? [];
     const age = ageDays(record.asked_at);
-    console.log(`${index + 1}. ${id}  (${record.type ?? "change"}, waiting ${age})`);
+    console.log(`${index + 1}. ${ids}  (${record.type ?? "change"}, waiting ${age})`);
     console.log(`   The tool asked: ${record.question ?? "(no question stored)"}`);
     console.log(`   Missing: ${missing.join(", ") || "(none)"}`);
     console.log("   Type this (replace the placeholder with the real value):");

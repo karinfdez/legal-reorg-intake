@@ -48,20 +48,20 @@ node scripts/test-redact.js
 node src/cli.js fixtures/envelopes/<file>.json
 ```
 
-| File | What it shows | Expected |
-| --- | --- | --- |
-| [`01-team-move-clean.json`](fixtures/envelopes/01-team-move-clean.json) | Happy path: authorized team move | EMITTED |
-| [`02-unauthorized-sender.json`](fixtures/envelopes/02-unauthorized-sender.json) | Not on the allowlist; no model call | REJECTED |
-| [`03-ambiguous.json`](fixtures/envelopes/03-ambiguous.json) | Hedged / details to follow | ABSTAINED |
-| [`04-injection-embedded.json`](fixtures/envelopes/04-injection-embedded.json) | Real reorg + “skip approval” | EMITTED |
-| [`05-injection-only.json`](fixtures/envelopes/05-injection-only.json) | Jailbreak, no reorg | ABSTAINED |
-| [`06-compensation-included.json`](fixtures/envelopes/06-compensation-included.json) | Salary mentioned, no comp change | EMITTED |
-| [`07-comp-change.json`](fixtures/envelopes/07-comp-change.json) | Salary increases → wrong workflow | ROUTED_OUT |
-| [`08-missing-date.json`](fixtures/envelopes/08-missing-date.json) | Complete move except “next quarter” | ABSTAINED |
-| [`09-ambiguous-manager.json`](fixtures/envelopes/09-ambiguous-manager.json) | Two Alex Riveras | ABSTAINED |
-| [`10-retroactive-date.json`](fixtures/envelopes/10-retroactive-date.json) | Past date: flag, do not block | EMITTED |
-| [`11-model-timeout.json`](fixtures/envelopes/11-model-timeout.json) | Forced timeout; no half ChangeSet | ABSTAINED |
-| [`12-inactive-cost-center.json`](fixtures/envelopes/12-inactive-cost-center.json) | Destination **CC-4300** is in the list but `active: false` (validate, not Slice B) | ABSTAINED |
+| File | message_id | What it shows | Expected |
+| --- | --- | --- | --- |
+| [`01-team-move-clean.json`](fixtures/envelopes/01-team-move-clean.json) | `msg_001` | Happy path: authorized team move | EMITTED |
+| [`02-unauthorized-sender.json`](fixtures/envelopes/02-unauthorized-sender.json) | `msg_002` | Not on the allowlist; no model call | REJECTED |
+| [`03-ambiguous.json`](fixtures/envelopes/03-ambiguous.json) | `msg_003` | Hedged / details to follow | ABSTAINED |
+| [`04-injection-embedded.json`](fixtures/envelopes/04-injection-embedded.json) | `msg_004` | Real reorg + “skip approval” | EMITTED |
+| [`05-injection-only.json`](fixtures/envelopes/05-injection-only.json) | `msg_005` | Jailbreak, no reorg | ABSTAINED |
+| [`06-compensation-included.json`](fixtures/envelopes/06-compensation-included.json) | `msg_006` | Salary mentioned, no comp change | EMITTED |
+| [`07-comp-change.json`](fixtures/envelopes/07-comp-change.json) | `msg_007` | Salary increases → wrong workflow | ROUTED_OUT |
+| [`08-missing-date.json`](fixtures/envelopes/08-missing-date.json) | `msg_008` | Complete move except “next quarter” | ABSTAINED |
+| [`09-ambiguous-manager.json`](fixtures/envelopes/09-ambiguous-manager.json) | `msg_009` | Two Alex Riveras | ABSTAINED |
+| [`10-retroactive-date.json`](fixtures/envelopes/10-retroactive-date.json) | `msg_010` | Past date: flag, do not block | EMITTED |
+| [`11-model-timeout.json`](fixtures/envelopes/11-model-timeout.json) | `msg_011` | Forced timeout; no half ChangeSet | ABSTAINED |
+| [`12-inactive-cost-center.json`](fixtures/envelopes/12-inactive-cost-center.json) | `msg_012` | Destination **CC-4300** is in the list but `active: false` (validate, not Slice B) | ABSTAINED |
 
 Allowlist used by trust: [`fixtures/reference/authorized_submitters.json`](fixtures/reference/authorized_submitters.json) (Priya Nair HRBP, Sam Okonkwo legal_ops).
 
@@ -121,7 +121,7 @@ node src/cli.js pending
 Open questions — the tool stopped and is waiting for a person.
 Saved as files in out/pending/ (not Slack). Copy the command under a question to answer it.
 
-1. chg_60b3eb89  (team_move, waiting 0d)
+1. chg_60b3eb89  msg_008  (team_move, waiting 0d)
    The tool asked: What is the effective date for the Platform Analytics team move?
    Missing: effective_date
    Type this (replace the placeholder with the real value):
@@ -138,7 +138,7 @@ node src/cli.js answer chg_60b3eb89 --effective-date 2026-10-01
 ```
 [5] validate   PASS      resolved
 [6] emit       PASS      wrote chg_60b3eb89
---> EMITTED chg_60b3eb89 (resolved from pending)
+--> EMITTED chg_60b3eb89  msg_008 (resolved from pending)
 ```
 
 ```bash
@@ -161,4 +161,4 @@ The ChangeSet is now in `out/changesets/chg_60b3eb89.json` (no email body). Re-r
 | `out/pending/<change_id>.json` | Parked clarification. No `envelope.text`. |
 | `out/changesets/<change_id>.json` | Emitted ChangeSet. Idempotent: same `message_id` does not write a second file. |
 
-`change_id` is `chg_` + first 8 hex chars of `sha256(message_id)`.
+`change_id` is `chg_` + first 8 hex chars of `sha256(message_id)`. The filename is that id, not the fixture name (`01-team-move-clean.json`). Open the JSON and read `source.message_id` (changesets) or `correlation.message_id` (pending) to match it to an envelope.

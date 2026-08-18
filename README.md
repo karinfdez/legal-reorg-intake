@@ -37,18 +37,40 @@ npm install
 ## Run
 
 ```bash
-node src/cli.js --all                                    # regression suite
+node src/cli.js --all                                    # every case in fixtures/envelopes/
 node src/cli.js fixtures/envelopes/01-team-move-clean.json
 node scripts/test-redact.js
 ```
 
-`--all` compares each fixture’s outcome to its `expected_outcome`. A fixture that is *supposed* to be rejected matching is success.
+**All cases live in [`fixtures/envelopes/`](fixtures/envelopes/).** Each JSON file is one inbound message plus an `expected_outcome`. `--all` runs them in filename order and checks that field. To try the next one yourself:
+
+```bash
+node src/cli.js fixtures/envelopes/<file>.json
+```
+
+| File | What it shows | Expected |
+| --- | --- | --- |
+| [`01-team-move-clean.json`](fixtures/envelopes/01-team-move-clean.json) | Happy path: authorized team move | EMITTED |
+| [`02-unauthorized-sender.json`](fixtures/envelopes/02-unauthorized-sender.json) | Not on the allowlist; no model call | REJECTED |
+| [`03-ambiguous.json`](fixtures/envelopes/03-ambiguous.json) | Hedged / details to follow | ABSTAINED |
+| [`04-injection-embedded.json`](fixtures/envelopes/04-injection-embedded.json) | Real reorg + “skip approval” | EMITTED |
+| [`05-injection-only.json`](fixtures/envelopes/05-injection-only.json) | Jailbreak, no reorg | ABSTAINED |
+| [`06-compensation-included.json`](fixtures/envelopes/06-compensation-included.json) | Salary mentioned, no comp change | EMITTED |
+| [`07-comp-change.json`](fixtures/envelopes/07-comp-change.json) | Salary increases → wrong workflow | ROUTED_OUT |
+| [`08-missing-date.json`](fixtures/envelopes/08-missing-date.json) | Complete move except “next quarter” | ABSTAINED |
+| [`09-ambiguous-manager.json`](fixtures/envelopes/09-ambiguous-manager.json) | Two Alex Riveras | ABSTAINED |
+| [`10-retroactive-date.json`](fixtures/envelopes/10-retroactive-date.json) | Past date: flag, do not block | EMITTED |
+| [`11-model-timeout.json`](fixtures/envelopes/11-model-timeout.json) | Forced timeout; no half ChangeSet | ABSTAINED |
+
+Allowlist used by trust: [`fixtures/reference/authorized_submitters.json`](fixtures/reference/authorized_submitters.json) (Priya Nair HRBP, Sam Okonkwo legal_ops).
+
+`--all` compares each file’s outcome to `expected_outcome`. A fixture that is *supposed* to be rejected matching is success.
 
 Exit codes: `0` for EMITTED / ABSTAINED / ROUTED_OUT, `1` for REJECTED or unknown `change_id`.
 
 ## Worked example: missing date → human answers
 
-Fixture 08 is a complete team move except the date is “next quarter.” The pipeline must not invent a calendar date. `change_id` is derived from `message_id` (`msg_008` → `chg_60b3eb89`).
+After `--all` or `01`, **08** is the interesting next run: a complete team move except the date is “next quarter.” The pipeline must not invent a calendar date. `change_id` is derived from `message_id` (`msg_008` → `chg_60b3eb89`). The other files in `fixtures/envelopes/` run the same way (`node src/cli.js fixtures/envelopes/02-unauthorized-sender.json`, and so on).
 
 ```bash
 node src/cli.js fixtures/envelopes/08-missing-date.json
@@ -95,35 +117,6 @@ node src/cli.js pending
 ```
 
 The ChangeSet is now in `out/changesets/chg_60b3eb89.json` (no email body). Re-running the same inbound message returns **EMITTED** with `(already emitted)` and does not rewrite the file.
-
-Unauthorized senders never reach the model:
-
-```bash
-node src/cli.js fixtures/envelopes/02-unauthorized-sender.json
-```
-
-```
-[1] trust      FAIL      unauthorized_sender
---> REJECTED unauthorized_sender
-```
-
-## Fixtures
-
-| File | Expected |
-| --- | --- |
-| `01-team-move-clean` | EMITTED |
-| `02-unauthorized-sender` | REJECTED (0 model calls) |
-| `03-ambiguous` | ABSTAINED at classify |
-| `04-injection-embedded` | EMITTED (jailbreak ignored) |
-| `05-injection-only` | ABSTAINED |
-| `06-compensation-included` | EMITTED (salary mentioned, no comp change) |
-| `07-comp-change` | ROUTED_OUT |
-| `08-missing-date` | ABSTAINED at validate (`effective next quarter`) |
-| `09-ambiguous-manager` | ABSTAINED (which Alex Rivera?) |
-| `10-retroactive-date` | EMITTED + `retroactive_effective_date` flagged, not blocked |
-| `11-model-timeout` | ABSTAINED (forced timeout; no half ChangeSet) |
-
-Allowlist: `fixtures/reference/authorized_submitters.json` (Priya Nair HRBP, Sam Okonkwo legal_ops).
 
 ## On disk (`out/`, gitignored)
 

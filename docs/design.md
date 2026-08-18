@@ -72,9 +72,9 @@ Components and interfaces:
 | `checkTrust` | `(envelope, { authorizedSubmitters }) → { ok, submitter \| reason }` | Allowlist + allowed sources + ISO timestamp. **Never reads `text`.** |
 | `redact` | `text → { redacted, tokens }` | Pure regex. Salary, SSN, account, email, phone → tokens. Names, CC codes, dates, headcount, worker IDs survive. Token map is process-local; never audited, never persisted, never sent to a model. |
 | `classify` | `redacted → { type, confidence }` | Claude + forced tool `emit_classification`. Enum only. Unclear → abstain. |
-| `extract` | `(redacted, classification) → ChangeSet` | Fills structural fields. Reports `comp_change: boolean`, **never the amount**. |
-| `validate` | `ChangeSet → { ok, missing[], question }` | Deterministic required fields. Missing date → abstain with a question, not a reject. |
-| Route / emit | ChangeSet → outcome | `comp_change === true` → `ROUTED_OUT`. Else emit. |
+| `extract` | `(redacted, classification) → ChangeSet` | Fills structural fields as written (names, CC codes). Reports `comp_change: boolean`, **never the amount**. Does not look up IDs. |
+| `validate` | `ChangeSet → { ok, missing[], question }` | Required fields, then **name/code resolution** against `fixtures/reference/managers.json` and `cost_centers.json`. Missing date, 0 matches, 2+ Alex Riveras, or `active: false` → abstain. Not Slice B. |
+| Route / emit | ChangeSet → outcome | `comp_change === true` → `ROUTED_OUT`. Else write `out/changesets/<change_id>.json` (idempotent). |
 | Audit | `{ ts, message_id, step, status, reason? }` | JSONL. No payload text. Not a notification. |
 
 Four outcomes (collapsing them loses the product):
@@ -115,7 +115,7 @@ flowchart TD
 
 *Figure 1. Slice A as implemented in the prototype (`node src/cli.js --all`). Trust does not read `envelope.text`. The redact token map is not passed to the model and is not written to the audit log. Classify and extract are forced-tool model calls; every other node is code.*
 
-Fixtures are a regression suite (`expected_outcome` on each file). `source` is pretend ingest; `expected_outcome` is the answer key for what the pipeline should decide after that. `--all` succeeds when 02 is rejected and 07 is routed out.
+Fixtures are a regression suite (`expected_outcome` on each file). `source` is pretend ingest; `expected_outcome` is the answer key for what the pipeline should decide after that. `--all` succeeds when 02 is rejected and 07 is routed out. Manager/CC lookup is **validate** (Slice A): 01 resolves Hale/Chen and CC-4100/4200; 09 abstains on two Alex Riveras; **12** abstains on inactive CC-4300. Slice B would *write* those IDs later; it does not do the matching. Full list is in `README.md`.
 
 #### Resuming an abstention
 
@@ -129,6 +129,8 @@ This is deliberately not durable execution. In production this workflow belongs 
 node src/cli.js pending
 node src/cli.js answer <change_id> --effective-date 2026-10-01
 ```
+
+In the prototype, `pending` prints each saved question and the exact `answer` command to copy. That list is `out/pending/*.json` in the terminal — not Slack, not a web inbox. Production still pages the one ops owner; the CLI is the stand-in.
 
 Two gaps are known and unaddressed. Unanswered abstentions have no timeout, reminder, or escalation — a silently stalled change is indistinguishable from one that was never submitted, and this is the same gap that applies to unattested manual steps in Slice B. And correlation depends on the platform's threading; a human who replies in a new thread instead of the original will not be matched, which in production needs either a visible correlation token or a fallback matching path.
 
@@ -283,7 +285,7 @@ node scripts/test-redact.js          # PII / ID survival
 node src/cli.js --all                # fixtures vs expected_outcome
 ```
 
-See `README.md` for setup, `pending` / `answer`, and the full fixture list. Extract, validate, and emit are implemented; Slice B is not.
+See `README.md` for setup, the `pending` / `answer` walkthrough, and the full fixture list (01–12). Extract, validate, emit, and pending resume are implemented; Slice B is not. Manager and cost-centre tables are consulted in **validate**, not in the graph.
 
 ---
 

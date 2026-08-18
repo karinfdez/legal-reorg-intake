@@ -21,7 +21,14 @@ export function append(event) {
   if (event.reason != null) {
     line.reason = event.reason;
   }
+  if (event.actor != null) {
+    line.actor = event.actor;
+  }
 
   mkdirSync(OUT_DIR, { recursive: true });
   appendFileSync(AUDIT_PATH, `${JSON.stringify(line)}\n`, "utf8");
+}
+
+export function auditPath() {
+  return AUDIT_PATH;
 }

@@ -40,6 +40,7 @@ The prototype demonstrates the judgment-heavy half: **capture → trust → reda
 | Persistent token vault | Would be a new sensitive store plus a correlation surface for data this workflow does not need. |
 | Autonomous agent / tool-loop | The steps *can* be enumerated. Using a model to re-derive a known checklist trades auditability for nothing. |
 | UI | Work orders and a CLI trace are more reviewable in a 3–4 hour slice. |
+| Slice A waiting inbox / resume job | We persist a pending *record* (fields + question), not a parked execution. Temporal / Step Functions would replace `out/pending/` later. |
 | Production identity, locking, or GL adapters | Out of the time box. Designed below; not implemented. |
 
 ---
@@ -74,14 +75,14 @@ Components and interfaces:
 | `extract` | `(redacted, classification) → ChangeSet` | Fills structural fields. Reports `comp_change: boolean`, **never the amount**. |
 | `validate` | `ChangeSet → { ok, missing[], question }` | Deterministic required fields. Missing date → abstain with a question, not a reject. |
 | Route / emit | ChangeSet → outcome | `comp_change === true` → `ROUTED_OUT`. Else emit. |
-| Audit | `{ ts, message_id, step, status, reason? }` | JSONL. No payload text. |
+| Audit | `{ ts, message_id, step, status, reason? }` | JSONL. No payload text. Not a notification. |
 
 Four outcomes (collapsing them loses the product):
 
 | Outcome | Meaning |
 | --- | --- |
 | **REJECTED** | Not allowed to submit. Log it; stop. |
-| **ABSTAINED** | Allowed; most of it parsed; a required field is missing. Specific question. |
+| **ABSTAINED** | Allowed; cannot finish. Missing field, unclear type, or a failed model call. Specific question. Run ends. |
 | **ROUTED_OUT** | Allowed; real change; **wrong workflow** (comp review). Offer to continue the structural move alone. |
 | **EMITTED** | Structural ChangeSet complete and in scope. |
 
@@ -115,6 +116,35 @@ flowchart TD
 *Figure 1. Slice A as implemented in the prototype (`node src/cli.js --all`). Trust does not read `envelope.text`. The redact token map is not passed to the model and is not written to the audit log. Classify and extract are forced-tool model calls; every other node is code.*
 
 Fixtures are a regression suite (`expected_outcome` on each file). `source` is pretend ingest; `expected_outcome` is the answer key for what the pipeline should decide after that. `--all` succeeds when 02 is rejected and 07 is routed out.
+
+#### Resuming an abstention
+
+When Slice A abstains, it writes a pending record containing the missing fields, the question asked, the correlation key (Slack `thread_ts` or email `In-Reply-To`), and the partial extraction — then exits. The clarification arrives as a separate inbound event and is matched back by correlation key. Resuming re-runs only validation and emit: the text was already classified and extracted, and re-running the model calls would be both wasted spend and non-deterministic.
+
+`change_id` is derived deterministically from `message_id` (`chg_` + first 8 hex chars of `sha256(message_id)`), so reprocessing the same inbound message produces the same identifier. Slice B keys step state on `change_id:step_id`, so this is what prevents one reorg's step state from being attributed to another on a redelivery.
+
+This is deliberately not durable execution. In production this workflow belongs on Temporal or Step Functions, where a human gate is a suspended await on a signal and the engine handles persistence, timeouts, and replay — a reorg can plausibly wait days for a finance owner. That is the correct tool, but it is infrastructure rather than judgment, and the same state transitions are demonstrable with a pending record and two CLI commands. The pending record is the seam: adopting a durable engine replaces the persistence, not the design.
+
+```bash
+node src/cli.js pending
+node src/cli.js answer <change_id> --effective-date 2026-10-01
+```
+
+Two gaps are known and unaddressed. Unanswered abstentions have no timeout, reminder, or escalation — a silently stalled change is indistinguishable from one that was never submitted, and this is the same gap that applies to unattested manual steps in Slice B. And correlation depends on the platform's threading; a human who replies in a new thread instead of the original will not be matched, which in production needs either a visible correlation token or a fallback matching path.
+
+The pending file does **not** store `envelope.text` or the redaction token map — only already-redacted extracted fields.
+
+#### Audit is not a notification
+
+`out/audit.jsonl` answers “what happened to this `message_id`?” on disk — for you now, and for an interviewer later. It does **not** store the email, salary, or a resume token. It is **not** AWS. It is **not** a notification.
+
+| Job | Today | Later, if you productionize |
+| --- | --- | --- |
+| **Trail of steps** | `out/audit.jsonl` | Ship the **same small events** to CloudWatch / Datadog (still no raw text) |
+| **“Something needs a human”** | Printed in the CLI; pending record on disk | Slack task to the one ops owner on `ABSTAINED` / `ROUTED_OUT` |
+| **Resume from a missing field** | `answer` re-enters at validate from `out/pending/` (state, not a parked execution) | Same record shape in Temporal / Step Functions |
+
+Logs and notifications are **two pipes**. A log tells you the step failed. A Slack task tells **one person** to answer “which Alex Rivera?” Without that second pipe, a jsonl file in `out/` is only useful if someone opens it.
 
 ### 3.3 Slice B — validation to propagation (designed, not built)
 
@@ -152,7 +182,7 @@ Writes:
 
 | Moment | Why a human | What they do |
 | --- | --- | --- |
-| Incomplete request | Model must not invent an effective date | Answer the abstain question; resubmit |
+| Incomplete request or failed model call | Must not invent a date, and must not emit a half-written ChangeSet | Pending record is written; human answers fields; validate+emit resume. No parked *execution*. |
 | Compensation on the request | Different approval chain; this pipeline must not hold salary | Comp review, or confirm “structural move only” |
 | Step with **no API** (homework constraint) | Someone must key the change | Authenticated work order; `manual_entry` until attested |
 | GL / mapping / other control steps | Approval is a control, not UX | Named owner attests (`awaiting_attestation → completed`) |
@@ -161,6 +191,21 @@ Writes:
 If compensation had to be in scope: **same mechanism** as the API-less tool — `mode: manual_entry` with a comp approver. Different reason (sensitivity vs missing API). Still no salary field on the automated path. That is a stronger answer than “we excluded it.”
 
 Production attestation belongs in Slack, where approvers already work. The click must authenticate the actor; it is an authorization event, not a notification ack.
+
+Abstention resume (pending record, `change_id`, why this is not Temporal) is in **3.2**. Who gets the Slack task is below.
+
+**Who is pinged.** Two different people, and the bot does not skip the owner.
+
+| Role | Who | What they do on ABSTAINED |
+| --- | --- | --- |
+| **Submitter** | The HRBP / Legal Ops person who sent the original Slack or email (Priya). | Has the missing fact (the date, which Alex Rivera). They are not given a new app and they are not the queue owner. |
+| **Ops owner** | The one person who today holds the checklist in their head. | Gets a Slack **task** (not a new product): the specific question + a link back to the original message. They chase the answer, then fill the pending record (`answer` in the prototype; a Slack modal or thread reply in production). |
+
+Production does **not** mean “email the submitter a form and wait.” It means: post a task to the owner where they already work. Typical hop is owner → original thread → “what’s the effective date?” → owner patches the pending fields. A bot *may* post that question in-thread as a convenience, still on behalf of the owner — it is not an unattended reply-all to whoever mailed in.
+
+That is the same staffing model as today (one owner). The change is that the incomplete request is a visible task with a `change_id`, not a message that died in a channel.
+
+Slice B attestation remains a true user task (`awaiting_attestation → completed`) once a ChangeSet exists.
 
 ### 3.5 Prompt injection
 
@@ -183,6 +228,7 @@ Handled by **containment**, not a detector. Classify/extract can only emit value
 | **Model self-reported confidence as the gate** | Not auditable, not fixture-testable. Gate on required fields instead. |
 | **Reject any message that looks like injection** | Drops legitimate reorgs (fixture 04). Contain the call instead. |
 | **Two outcomes (pass / fail)** | “Not authorized” and “missing effective date” and “belongs in comp review” are different events. HR would not use a parser that only says rejected. |
+| **Park Slice A as a durable execution** | Right for Slice B attestation. For intake we persist a pending *record* and re-enter at validate. A Temporal runtime would replace `out/pending/`, not a half-written ChangeSet plus the email body. |
 
 ---
 
@@ -234,20 +280,10 @@ Smaller, named: concurrent reorgs on the same CC (last-write-wins in a prototype
 ```bash
 cd ~/Documents/Projects/legal-reorg-intake
 node scripts/test-redact.js          # PII / ID survival
-node src/cli.js --all                # seven fixtures, expected_outcome match
+node src/cli.js --all                # fixtures vs expected_outcome
 ```
 
-| Fixture | Shows |
-| --- | --- |
-| 01 | Authorized, clean team move → **EMITTED** |
-| 02 | Unauthorized sender → **REJECTED** (no model call) |
-| 03 | Vague text → **ABSTAINED** with a question |
-| 04 | Real move + jailbreak → **EMITTED** (injection did not win) |
-| 05 | Jailbreak only → **ABSTAINED** |
-| 06 | Salary *mentioned*, no comp change → **EMITTED**; redact `N tokens replaced` |
-| 07 | Salary *increases* → **ROUTED_OUT** |
-
-Extract and validate are still stubs on field fill; classify, trust, redact, and the four-way outcome split are real.
+See `README.md` for setup, `pending` / `answer`, and the full fixture list. Extract, validate, and emit are implemented; Slice B is not.
 
 ---
 

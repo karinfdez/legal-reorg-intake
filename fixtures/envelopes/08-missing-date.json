@@ -1,0 +1,8 @@
+{
+  "message_id": "msg_008",
+  "source": "email",
+  "sender": "priya.nair@example.com",
+  "received_at": "2026-08-17T15:04:00Z",
+  "text": "Please move the Platform Analytics team of 6 from Jordan Hale to Maya Chen. They are moving from cost center CC-4100 to CC-4200, effective next quarter.",
+  "expected_outcome": "ABSTAINED"
+}

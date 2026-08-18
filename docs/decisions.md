@@ -48,6 +48,13 @@ Running log kept during the build. Raw material for the design doc — not the d
 - **Abstain is a first-class output.** Never infer or default an effective date. When a
   required field is missing, return a specific question, not a generic failure.
 
+- **Slice A persists pending state, not a parked execution.** ABSTAINED writes
+  `out/pending/<change_id>.json` (fields, missing, question, correlation) and
+  ends the run. `answer` re-enters at validate. No email body, no token map, no
+  resume token. This file is the seam Temporal / Step Functions would replace.
+  No timeout — a stalled pending is indistinguishable from never-submitted
+  (known gap).
+
 - **Prompt injection is handled architecturally, not by detection.** The classify and
   extract calls have a closed schema and zero tools with side effects, so injected
   instructions have no reachable action surface — there is no field that means "approve".
@@ -241,10 +248,14 @@ the non-deterministic steps, and it exists because the pipeline has gaps between
 rather than being one opaque call. Temperature 0 is what makes it meaningful — without
 reproducibility, a failing case could be a real regression or sampling noise.
 
-Current fixtures: clean team move (`EMITTED`), unauthorized sender (`REJECTED`, asserted
-zero model calls), hedged "details to follow" message (`ABSTAINED`), legitimate reorg with
-embedded injection (`EMITTED`, injection inert), injection-only message with no reorg
-content (`ABSTAINED`).
+Current fixtures: clean team move (`EMITTED`); unauthorized sender (`REJECTED`, zero model
+calls); hedged "details to follow" (`ABSTAINED` at classify); real reorg plus injection
+(`EMITTED`); injection-only (`ABSTAINED`); salary mentioned but no comp change (`EMITTED`);
+salary increases (`ROUTED_OUT`); team move with date TBD (`ABSTAINED` at validate);
+manager name matching two Alex Riveras (`ABSTAINED` — which one?); past effective date
+(`EMITTED` with `retroactive_effective_date` flagged, not blocked); model timeout after
+trust/redact (`ABSTAINED`, audit `classify`/`fail` with reason `Request timed out`, no
+payload in `out/audit.jsonl`).
 
 ---
 

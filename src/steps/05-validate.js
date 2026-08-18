@@ -64,20 +64,12 @@ export function validate(
   const missing = collectMissing(type, fields, extraction?.missing ?? []);
 
   if (missing.length > 0) {
-    return {
-      ok: false,
-      missing,
-      question: buildQuestion(type, fields, missing),
-    };
+    return failResult(type, fields, notes, missing, buildQuestion(type, fields, missing));
   }
 
   const dateProblem = applyEffectiveDate(fields.effective_date, receivedAt, notes);
   if (dateProblem) {
-    return {
-      ok: false,
-      missing: ["effective_date"],
-      question: dateProblem,
-    };
+    return failResult(type, fields, notes, ["effective_date"], dateProblem);
   }
 
   const resolved = { ...fields };
@@ -85,11 +77,7 @@ export function validate(
   for (const field of nameFields) {
     const result = resolveManager(fields[field], managers);
     if (!result.ok) {
-      return {
-        ok: false,
-        missing: [field],
-        question: result.question,
-      };
+      return failResult(type, fields, notes, [field], result.question);
     }
     resolved[idField(field)] = result.id;
   }
@@ -98,11 +86,7 @@ export function validate(
   for (const { field, value } of ccFields) {
     const result = resolveCostCenter(value, costCenters);
     if (!result.ok) {
-      return {
-        ok: false,
-        missing: [field],
-        question: result.question,
-      };
+      return failResult(type, fields, notes, [field], result.question);
     }
     if (field === "cost_centers_target") {
       resolved.cost_centers_target_ids = [
@@ -124,6 +108,17 @@ export function validate(
       ...resolved,
       notes,
     },
+  };
+}
+
+function failResult(type, fields, notes, missing, question) {
+  return {
+    ok: false,
+    type: type ?? null,
+    fields: { ...fields },
+    notes: [...notes],
+    missing,
+    question,
   };
 }
 

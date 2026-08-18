@@ -255,7 +255,7 @@ salary increases (`ROUTED_OUT`); team move with date TBD (`ABSTAINED` at validat
 manager name matching two Alex Riveras (`ABSTAINED` — which one?); past effective date
 (`EMITTED` with `retroactive_effective_date` flagged, not blocked); model timeout after
 trust/redact (`ABSTAINED`, audit `classify`/`fail` with reason `Request timed out`, no
-payload in `out/audit.jsonl`).
+payload in `out/audit.jsonl`); destination CC-4300 inactive (`ABSTAINED` at validate).
 
 ---
 

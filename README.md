@@ -21,7 +21,7 @@ The model only returns **values** (forced-tool classify, then extract). Code dec
 
 Trust never reads `envelope.text`. Redact token maps never leave the process. Audit lines are `{ ts, message_id, step, status, reason? }` — not the email body, not salary, not a resume token.
 
-On **ABSTAINED**, the run ends and a pending **record** is stored (`out/pending/`). That is state, not a parked Temporal execution. Resume re-enters at validate + emit; classify/extract are not re-run.
+On **ABSTAINED**, the tool stops and writes a question to `out/pending/` so a person can fill in the blank. See **If the tool asks a question** below.
 
 The argument, Slice B, and known gaps are in [docs/design.md](docs/design.md). Working log: [docs/decisions.md](docs/decisions.md).
 
@@ -61,12 +61,34 @@ node src/cli.js fixtures/envelopes/<file>.json
 | [`09-ambiguous-manager.json`](fixtures/envelopes/09-ambiguous-manager.json) | Two Alex Riveras | ABSTAINED |
 | [`10-retroactive-date.json`](fixtures/envelopes/10-retroactive-date.json) | Past date: flag, do not block | EMITTED |
 | [`11-model-timeout.json`](fixtures/envelopes/11-model-timeout.json) | Forced timeout; no half ChangeSet | ABSTAINED |
+| [`12-inactive-cost-center.json`](fixtures/envelopes/12-inactive-cost-center.json) | Destination **CC-4300** is in the list but `active: false` (validate, not Slice B) | ABSTAINED |
 
 Allowlist used by trust: [`fixtures/reference/authorized_submitters.json`](fixtures/reference/authorized_submitters.json) (Priya Nair HRBP, Sam Okonkwo legal_ops).
 
 `--all` compares each file’s outcome to `expected_outcome`. A fixture that is *supposed* to be rejected matching is success.
 
 Exit codes: `0` for EMITTED / ABSTAINED / ROUTED_OUT, `1` for REJECTED or unknown `change_id`.
+
+## If the tool asks a question (`pending` / `answer`)
+
+You do not need Slack, a UI, or Temporal to try this. Three commands, three jobs:
+
+| You type | In plain English |
+| --- | --- |
+| `node src/cli.js fixtures/envelopes/08-missing-date.json` | “Process this email.” |
+| `node src/cli.js pending` | “What questions am I supposed to answer?” |
+| `node src/cli.js answer chg_60b3eb89 --effective-date 2026-10-01` | “The date is October 1, 2026 — finish that one.” |
+
+What actually happened:
+
+1. Priya (HR) sent an email. The date was “next quarter,” not a calendar day.
+2. The tool understood the team move. It **refused to invent a date**. It stopped. That is **ABSTAINED**.
+3. It did **not** email Priya. It saved a sticky note as a file: `out/pending/chg_60b3eb89.json`.
+4. `pending` just **prints those sticky notes**. The table/list is terminal output, not a web page.
+5. In real life you would ping Priya in Slack, get “October 1,” then type `answer`. You are filling in one blank on a form the tool already started. It does not re-read the email or call the model again.
+6. After `answer` succeeds, the sticky note is moved to `out/pending/resolved/` and the finished form is `out/changesets/chg_60b3eb89.json`.
+
+`--effective-date` is the missing field `effective_date`. Other blanks work the same way: `--manager-to-name "Maya Chen"`.
 
 ## Worked example: missing date → human answers
 
@@ -83,17 +105,28 @@ node src/cli.js fixtures/envelopes/08-missing-date.json
 [4] extract    PASS      missing: effective_date
 [5] validate   ABSTAIN   missing: effective_date
 --> ABSTAINED chg_60b3eb89 "What is the effective date for the Platform Analytics team move?"
+
+The run stopped. The question is saved on disk (not Slack).
+  See open questions:  node src/cli.js pending
+  Answer this one:     node src/cli.js answer chg_60b3eb89 --effective-date 2026-10-01
 ```
 
-Nothing is written under `out/changesets/`. A pending record is.
+Nothing is written under `out/changesets/`. The question is a file: `out/pending/chg_60b3eb89.json`.
 
 ```bash
 node src/cli.js pending
 ```
 
 ```
-change_id     type       missing         asked_at                  age
-chg_60b3eb89  team_move  effective_date  2026-08-18T00:21:56.027Z  0d
+Open questions — the tool stopped and is waiting for a person.
+Saved as files in out/pending/ (not Slack). Copy the command under a question to answer it.
+
+1. chg_60b3eb89  (team_move, waiting 0d)
+   The tool asked: What is the effective date for the Platform Analytics team move?
+   Missing: effective_date
+   Type this (replace the placeholder with the real value):
+
+     node src/cli.js answer chg_60b3eb89 --effective-date 2026-10-01
 ```
 
 The ops owner gets the date from the submitter and patches the field. Classify and extract are **not** re-run.
@@ -113,7 +146,9 @@ node src/cli.js pending
 ```
 
 ```
-(no pending clarifications)
+No open questions.
+When a message is incomplete, the tool saves a question as a file in out/pending/.
+This list is that folder — not Slack, not email.
 ```
 
 The ChangeSet is now in `out/changesets/chg_60b3eb89.json` (no email body). Re-running the same inbound message returns **EMITTED** with `(already emitted)` and does not rewrite the file.

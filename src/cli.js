@@ -33,6 +33,14 @@ function printResult(result) {
   } else if (result.outcome === "ABSTAINED") {
     const id = result.change_id ? `${result.change_id} ` : "";
     console.log(`--> ABSTAINED ${id}"${result.question}"`);
+    if (result.change_id) {
+      console.log("");
+      console.log("The run stopped. The question is saved on disk (not Slack).");
+      console.log("  See open questions:  node src/cli.js pending");
+      console.log(
+        `  Answer this one:     ${suggestAnswerCommand(result.change_id, result.missing)}`
+      );
+    }
   } else if (result.outcome === "ROUTED_OUT") {
     console.log(`--> ROUTED_OUT "${result.question}"`);
   } else {
@@ -55,12 +63,13 @@ async function listEnvelopePaths() {
 
 function printUsage() {
   console.error("Usage:");
-  console.error("  node src/cli.js <envelope.json>");
-  console.error("  node src/cli.js --all");
-  console.error("  node src/cli.js pending");
+  console.error("  node src/cli.js <envelope.json>   Process one email/Slack message");
+  console.error("  node src/cli.js --all             Process every file in fixtures/envelopes/");
+  console.error("  node src/cli.js pending           Show questions the tool is waiting on");
   console.error(
-    "  node src/cli.js answer <change_id> --field value [--field value ...]"
+    "  node src/cli.js answer <id> --effective-date 2026-10-01"
   );
+  console.error("                                 Fill in a missing field and finish that change");
 }
 
 // --all doubles as the regression suite. Each fixture declares the outcome it
@@ -97,33 +106,52 @@ function ageDays(askedAt) {
   return `${Math.floor((Date.now() - t) / 86_400_000)}d`;
 }
 
+function snakeToKebab(name) {
+  return String(name).replaceAll("_", "-");
+}
+
+function suggestAnswerCommand(changeId, missing = []) {
+  const fields = missing.filter((name) => name && name !== "*" && name !== "type");
+  if (fields.length === 0) {
+    return `node src/cli.js answer ${changeId} --effective-date 2026-10-01`;
+  }
+  const flags = fields
+    .map((name) => {
+      const flag = snakeToKebab(name);
+      if (name === "effective_date") return `--${flag} 2026-10-01`;
+      return `--${flag} VALUE`;
+    })
+    .join(" ");
+  return `node src/cli.js answer ${changeId} ${flags}`;
+}
+
 function printPendingTable() {
   const records = listPending();
   if (records.length === 0) {
-    console.log("(no pending clarifications)");
+    console.log("No open questions.");
+    console.log(
+      "When a message is incomplete, the tool saves a question as a file in out/pending/."
+    );
+    console.log("This list is that folder — not Slack, not email.");
     return;
   }
 
-  const rows = records.map((record) => ({
-    change_id: record.change_id ?? "",
-    type: record.type ?? "",
-    missing: (record.missing ?? []).join(","),
-    asked_at: record.asked_at ?? "",
-    age: ageDays(record.asked_at),
-  }));
-  const headers = ["change_id", "type", "missing", "asked_at", "age"];
-  const widths = Object.fromEntries(
-    headers.map((header) => [
-      header,
-      Math.max(header.length, ...rows.map((row) => String(row[header]).length)),
-    ])
-  );
-  console.log(headers.map((header) => header.padEnd(widths[header])).join("  "));
-  for (const row of rows) {
-    console.log(
-      headers.map((header) => String(row[header]).padEnd(widths[header])).join("  ")
-    );
-  }
+  console.log("Open questions — the tool stopped and is waiting for a person.");
+  console.log("Saved as files in out/pending/ (not Slack). Copy the command under a question to answer it.");
+  console.log("");
+
+  records.forEach((record, index) => {
+    const id = record.change_id ?? "";
+    const missing = record.missing ?? [];
+    const age = ageDays(record.asked_at);
+    console.log(`${index + 1}. ${id}  (${record.type ?? "change"}, waiting ${age})`);
+    console.log(`   The tool asked: ${record.question ?? "(no question stored)"}`);
+    console.log(`   Missing: ${missing.join(", ") || "(none)"}`);
+    console.log("   Type this (replace the placeholder with the real value):");
+    console.log("");
+    console.log(`     ${suggestAnswerCommand(id, missing)}`);
+    console.log("");
+  });
 }
 
 function kebabToSnake(name) {

@@ -44,7 +44,7 @@ function documentFrom(changeId, changeset, envelope) {
   };
 }
 
-function readExisting(changeId) {
+export function readExisting(changeId) {
   const path = changesetPath(changeId);
   if (!existsSync(path)) return null;
   return JSON.parse(readFileSync(path, "utf8"));

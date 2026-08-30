@@ -15,7 +15,7 @@ import { redact } from "./steps/02-redact.js";
 import { classify } from "./steps/03-classify.js";
 import { extract } from "./steps/04-extract.js";
 import { changeIdFor, validate } from "./steps/05-validate.js";
-import { emit } from "./steps/06-emit.js";
+import { emit, readExisting } from "./steps/06-emit.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -104,6 +104,33 @@ async function runPipelineInner(envelope, { authorizedSubmitters } = {}) {
     messageId
   );
 
+  // A redelivery of a message that already produced a ChangeSet (including
+  // one originally ABSTAINED and later resolved via `answer`) must not
+  // re-run classify/extract/validate: the changeset already exists and the
+  // original text hasn't changed. Checked by change_id, not by content.
+  const changeId = changeIdFor(messageId);
+  const existingChangeset = readExisting(changeId);
+  if (existingChangeset) {
+    auditStep(messageId, "emit", "already_emitted", changeId);
+    trace.push({
+      n: 2,
+      step: "emit",
+      status: "PASS",
+      detail: `already emitted ${changeId} (redelivered message)`,
+    });
+    return {
+      outcome: "EMITTED",
+      id: changeId,
+      change_id: changeId,
+      changeset: {
+        ...existingChangeset,
+        notes: [...(existingChangeset.notes ?? []), "already_emitted"],
+      },
+      already_emitted: true,
+      trace,
+    };
+  }
+
   // Pass only `redacted` downstream. Never send `tokens` to the model or audit.
   const { redacted, tokens } = redact(envelope.text);
   const tokenCount = Object.keys(tokens).length;
@@ -188,7 +215,6 @@ async function runPipelineInner(envelope, { authorizedSubmitters } = {}) {
       : `comp_change=${extraction.fields?.comp_change === true}`;
   pass(trace, 4, "extract", extractDetail, messageId);
 
-  const changeId = changeIdFor(envelope.message_id);
   const validation = validate(extraction, {
     type: classification.type,
     receivedAt: envelope.received_at,

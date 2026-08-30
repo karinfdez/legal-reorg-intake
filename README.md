@@ -39,6 +39,12 @@ npm install
 ## Run
 
 ```bash
+npm test   # redact checks + Slice B graph walk + full fixture suite, in order
+```
+
+Or step through it:
+
+```bash
 # Slice A — needs ANTHROPIC_API_KEY (unauthorized fixtures do not call the model)
 node scripts/test-redact.js
 node src/cli.js --all

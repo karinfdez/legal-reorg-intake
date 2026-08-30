@@ -25,7 +25,7 @@ There is no single correct architecture. The brief grades reasoning: what we ass
 | Constraint | What we did |
 | --- | --- |
 | Reorgs arrive as **freeform text** (Slack, email, docs). No structured event to subscribe to. | Envelope `{ message_id, source, sender, received_at, text }`. `text` is untrusted. Fixtures stand in for connectors. |
-| At least one target system **has no API**; a human must key the change. | Slice B step `mode: manual_entry` (planning tool in Figure 2). Authenticated work order until attested. Designed, not built. |
+| At least one target system **has no API**; a human must key the change. | Slice B `mode: manual_entry` on the planning tool: a field-level work order until `attest`. |
 | Data includes **compensation and PII**. | Redact before the model (salary, SSN, account, email, phone). Token map never persisted, audited, or sent to the model. Comp is a boolean; amount never extracted. `comp_change === true` → **ROUTED_OUT**, not a write in this pipeline. |
 | Some steps need **human approval** before downstream work. Decide which, and where it lives. | Table in **3.4**. Short version: clarification and extraction-confirm in Slice A; GL/control attestation and API-less entry on the **graph step** (policy as data). Approval is not a model tool. |
 
@@ -304,8 +304,15 @@ Smaller, named: concurrent reorgs on the same CC (last-write-wins in a prototype
 
 ### Open before the business can rely on it
 
+If I had one more day, in this order:
+
+1. **Reconciliation read-back** — attestation and `approve` are claims, not proof. Nothing today reads the target system back to confirm the value landed. Until this exists, a mistyped manual entry or a silently-failed adapter looks identical to success.
+2. **Escalation on stalled human gates** — pending clarifications (§3.2) and `awaiting_attestation` / `awaiting_approval` steps (§3.3) have no SLA, timeout, or reminder. A stalled reorg is indistinguishable from one nobody is working on, and this is true on both sides of the Slice A / Slice B boundary.
+3. **Concurrent changes to the same cost centre** — prototype state is last-write-wins; no locking.
+
+Then, not yet urgent enough to be first:
+
 - **Retroactive dates into a closed period** — needs the close calendar and a Controllership path.
-- **Concurrent changes to the same cost centre** — prototype has no locking.
 - **Entity resolution** — production needs a documented match strategy and a no-match path, not only a fixture table.
 - **Who owns the graph file in six months** — review, change-control, drift detection. Process, not code.
 - **Which gate comes off first** — extraction-confirmation, once there is accuracy data. GL approval gates stay; they are controls.

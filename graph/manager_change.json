@@ -1,0 +1,28 @@
+{
+  "change_type": "manager_change",
+  "description": "Propagation steps for a reporting-line change: named workers move to a new manager, with no cost-centre or compensation change. Authored by the HR Ops owner who holds this sequence today; the engineering deliverable is the schema and the orchestrator, not these contents. This graph deliberately has no approval gate — a same-cost-centre manager change is not inside SOX change-management scope. Approval is a per-step policy field, not a hardcoded stage, so a graph that does not need one simply omits it.",
+  "steps": [
+    {
+      "id": "update_worker_assignment",
+      "label": "Reassign workers to the new manager",
+      "system": "hris",
+      "owner": "hr_ops",
+      "mode": "api",
+      "depends_on": [],
+      "dependency_reason": "none — this is the root step. The new manager (M-201) already exists; unlike a team move, no cost centre has to be created first.",
+      "fields": ["worker_names", "manager_to_id", "effective_date"]
+    },
+    {
+      "id": "update_org_hierarchy",
+      "label": "Reflect the new reporting line in the org planning tool",
+      "system": "planning_tool",
+      "owner": "fpna",
+      "mode": "manual_entry",
+      "depends_on": ["update_worker_assignment"],
+      "dependency_reason": "soft — the HR system is the system of record for reporting lines. The plan should reflect reality, not lead it.",
+      "manual_reason": "no API available in this environment; a human keys the change",
+      "fields": ["worker_names", "manager_from_id", "manager_to_id", "effective_date"],
+      "instructions": "Move each named worker from the source manager's rollup to the destination manager's rollup. Worker IDs are not resolved on a manager_change ChangeSet — match by name against the HR record you just updated, do not guess an ID."
+    }
+  ]
+}

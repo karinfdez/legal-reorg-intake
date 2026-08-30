@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node src/cli.js --all",
     "cli": "node src/cli.js",
+    "reset": "rm -rf out",
     "test": "node scripts/test-redact.js && node scripts/test-slice-b.js && node src/cli.js --all"
   },
   "dependencies": {

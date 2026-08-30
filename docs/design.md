@@ -143,6 +143,8 @@ flowchart TD
 
 Fixtures are a regression suite (`expected_outcome` on each file). `source` is pretend ingest; `expected_outcome` is the answer key for what the pipeline should decide after that. `--all` succeeds when 02 is rejected and 07 is routed out. Manager/CC lookup is **validate** (Slice A): 01 resolves Hale/Chen and CC-4100/4200; 09 abstains on two Alex Riveras; **12** abstains on inactive CC-4300. Slice B would *write* those IDs later; it does not do the matching. Full list is in `README.md`.
 
+All three in-scope types are exercised, not just `team_move`. Fixtures **01–12** are `team_move` — the fully worked type, happy path plus every abstention edge. **13** (`manager_change`) and **14** (`cost_center_split`) are the other two, and they emit through the **same pipeline with no new code**: classify/extract already carry a schema per type, `validate` already has required-field and resolution rules per type, and each type has its own `graph/<type>.json`. Adding a type cost fixtures, reference rows, and a graph — not a code branch. That is the concrete evidence for "the model returns values, code decides actions, the graph is data": if generalizing had needed new pipeline code, the abstraction would have been leaking.
+
 #### Resuming an abstention
 
 When Slice A abstains, it writes a pending record containing the missing fields, the question asked, the correlation key (Slack `thread_ts` or email `In-Reply-To`), and the partial extraction — then exits. The clarification arrives as a separate inbound event and is matched back by correlation key. Resuming re-runs only validation and emit: the text was already classified and extracted, and re-running the model calls would be both wasted spend and non-deterministic.
@@ -325,12 +327,15 @@ Then, not yet urgent enough to be first:
 ```bash
 cd ~/Documents/Projects/legal-reorg-intake
 node scripts/test-redact.js              # PII / ID survival
-node src/cli.js --all                    # fixtures vs expected_outcome
+node src/cli.js --all                    # 14 fixtures vs expected_outcome (all three types)
 node scripts/test-slice-b.js             # graph walk, no model
-node src/cli.js propagate chg_e81290fd   # after 01 has emitted
+node src/cli.js propagate chg_e81290fd   # team_move, after 01 has emitted
+# the other two types propagate the same way, each against its own graph:
+node src/cli.js propagate <chg from 13>  # manager_change  → graph/manager_change.json
+node src/cli.js propagate <chg from 14>  # cost_center_split → graph/cost_center_split.json (finance_owner approval gate)
 ```
 
-See `README.md` for setup, the `pending` / `answer` walkthrough, Slice B `propagate` / `attest` / `approve`, and the full fixture list (01–12). Manager and cost-centre tables are consulted in **validate**, not in the graph.
+See `README.md` for setup, the `pending` / `answer` walkthrough, Slice B `propagate` / `attest` / `approve`, and the full fixture list (01–14). Manager and cost-centre tables are consulted in **validate**, not in the graph.
 
 ---
 

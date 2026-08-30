@@ -1,0 +1,42 @@
+{
+  "change_type": "cost_center_split",
+  "description": "Propagation steps for splitting one cost centre into two or more targets. Authored by the FP&A and Controllership owners who hold this sequence today; the engineering deliverable is the schema and the orchestrator, not these contents. Order is a hard correctness constraint: target GL mappings must exist before allocation drivers can reference them.",
+  "steps": [
+    {
+      "id": "create_target_cost_centres",
+      "label": "Create GL mappings for the target cost centres",
+      "system": "gl_accounting",
+      "owner": "finance_ops",
+      "mode": "api",
+      "depends_on": [],
+      "dependency_reason": "none — this is the root step. Every downstream write references the target cost centres, so they must exist in the GL first.",
+      "fields": ["cost_centers_target_ids", "effective_date"]
+    },
+    {
+      "id": "update_allocation_rules",
+      "label": "Repoint cost allocation rules from the source to the targets",
+      "system": "gl_accounting",
+      "owner": "fpna",
+      "mode": "api",
+      "depends_on": ["create_target_cost_centres"],
+      "dependency_reason": "hard — allocation drivers can only reference cost centres that already exist in the GL. Running this before the targets are created allocates shared costs to an unrecognised cost centre, and the error surfaces at close.",
+      "approval": {
+        "role": "finance_owner",
+        "reason": "splitting a cost centre rewrites GL allocation mappings and is inside SOX change-management scope. Approval must be recorded with actor and timestamp as audit evidence."
+      },
+      "fields": ["cost_center_source_id", "cost_centers_target_ids", "split_basis", "effective_date"]
+    },
+    {
+      "id": "update_headcount_plan",
+      "label": "Reallocate headcount and budget across the target cost centres",
+      "system": "planning_tool",
+      "owner": "fpna",
+      "mode": "manual_entry",
+      "depends_on": ["update_allocation_rules"],
+      "dependency_reason": "hard — the plan must not distribute headcount to the targets until the allocation rules that fund them are live, or budget lands somewhere the drivers do not read.",
+      "manual_reason": "no API available in this environment; a human keys the change",
+      "fields": ["cost_center_source_id", "cost_centers_target_ids", "split_basis", "effective_date"],
+      "instructions": "Redistribute the source cost centre's headcount and budget across the targets using the stated split basis, in one transaction. Do not leave the source and targets in a state where the totals do not reconcile — an unbalanced window leaves headcount with no budget home, which is a silent error until close."
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "message_id": "msg_014",
+  "source": "email",
+  "sender": "sam.okonkwo@example.com",
+  "received_at": "2026-08-18T13:45:00Z",
+  "text": "We are splitting cost center CC-4400 into CC-4500 and CC-4600, allocated by headcount, effective November 2, 2026. No compensation changes are involved.",
+  "expected_outcome": "EMITTED"
+}

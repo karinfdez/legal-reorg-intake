@@ -1,0 +1,8 @@
+{
+  "message_id": "msg_013",
+  "source": "email",
+  "sender": "priya.nair@example.com",
+  "received_at": "2026-08-18T09:20:00Z",
+  "text": "Reporting-line change: please move Devon Park and Riley Osei from Jordan Hale to Maya Chen, effective November 2, 2026. This is a manager change only — same team, same cost center, no compensation changes.",
+  "expected_outcome": "EMITTED"
+}

@@ -42,6 +42,12 @@ npm install
 npm test   # redact checks + Slice B graph walk + full fixture suite, in order
 ```
 
+`out/` accumulates emitted ChangeSets and step state across runs, so once you have worked through the `answer` or `propagate` walkthroughs below, a redelivered message short-circuits to `already emitted` rather than re-running. That is correct behaviour, but it makes a *repeat* `--all` report the resolved fixtures as `EMITTED` instead of `ABSTAINED`. To start clean (e.g. between demos), wipe the regenerable state first — `out/` is gitignored, nothing else is touched:
+
+```bash
+npm run reset   # rm -rf out
+```
+
 Or step through it:
 
 ```bash
@@ -85,6 +91,10 @@ node src/cli.js fixtures/envelopes/<file>.json
 | [`10-retroactive-date.json`](fixtures/envelopes/10-retroactive-date.json) | `msg_010` | Past date: flag, do not block | EMITTED |
 | [`11-model-timeout.json`](fixtures/envelopes/11-model-timeout.json) | `msg_011` | Forced timeout; no half ChangeSet | ABSTAINED |
 | [`12-inactive-cost-center.json`](fixtures/envelopes/12-inactive-cost-center.json) | `msg_012` | Destination **CC-4300** is in the list but `active: false` (validate, not Slice B) | ABSTAINED |
+| [`13-manager-change-clean.json`](fixtures/envelopes/13-manager-change-clean.json) | `msg_013` | Second change type: reporting-line change, no team/CC | EMITTED |
+| [`14-cost-center-split-clean.json`](fixtures/envelopes/14-cost-center-split-clean.json) | `msg_014` | Third change type: split CC-4400 → CC-4500 + CC-4600 | EMITTED |
+
+Fixtures **01–12** are all `team_move` (the fully worked type — happy path plus every abstention edge). **13** and **14** are the other two in-scope types, `manager_change` and `cost_center_split`. They emit through the **same pipeline with no new code** — only new fixtures, reference rows, and a graph per type — which is the point: the model returns values, code decides actions, and the graph is data. Each has its own Slice B graph ([`graph/manager_change.json`](graph/manager_change.json), [`graph/cost_center_split.json`](graph/cost_center_split.json)); `cost_center_split` carries a `finance_owner` approval gate, `manager_change` deliberately carries none (approval is per-step policy, not a hardcoded stage).
 
 Allowlist used by trust: [`fixtures/reference/authorized_submitters.json`](fixtures/reference/authorized_submitters.json) (Priya Nair HRBP, Sam Okonkwo legal_ops). Slice B also reads roles from that file (Dana Wu `fpna` attests; Aisha Rahman `finance_owner` approves). Those two cannot submit Slice A (`can_submit: false`).
 

@@ -145,6 +145,12 @@ Fixtures are a regression suite (`expected_outcome` on each file). `source` is p
 
 All three in-scope types are exercised, not just `team_move`. Fixtures **01–12** are `team_move` — the fully worked type, happy path plus every abstention edge. **13** (`manager_change`) and **14** (`cost_center_split`) are the other two, and they emit through the **same pipeline with no new code**: classify/extract already carry a schema per type, `validate` already has required-field and resolution rules per type, and each type has its own `graph/<type>.json`. Adding a type cost fixtures, reference rows, and a graph — not a code branch. That is the concrete evidence for "the model returns values, code decides actions, the graph is data": if generalizing had needed new pipeline code, the abstraction would have been leaking.
 
+Three fixtures look surprising until you separate *mention* from *change* and *past* from *closed period*:
+
+- **06 (EMITTED, not routed out).** The text names a salary but states no compensation change. Redact strips the amount before the model, `extract` returns `comp_change: false`, and the structural move emits. A figure named in passing is not a comp event, and the pipeline never needed the number — contrast **07**, where the text states an actual raise, so `comp_change === true` → **ROUTED_OUT**. The distinction is "is compensation *changing*," not "does the word salary appear."
+- **10 (EMITTED with a flag, not blocked).** A *past* effective date is not malformed, and refusing it would drop a legitimate backdated move. `validate` attaches a `retroactive_effective_date` note and emits; the flag is what lets a human or a later control notice it. Whether a retroactive date falls in an already-**closed** period — a different, narrower question the prototype cannot answer without the close calendar — is the item deferred in §6. Past-but-open dates are handled here; closed-period dates are the open question, and conflating the two is the mistake this fixture guards against.
+- **11 (ABSTAINED on a failed call).** A forced model timeout after trust/redact abstains with a resubmit question rather than crashing or writing a half ChangeSet — the "a failed model call" branch of the outcomes table above, proven rather than asserted.
+
 #### Resuming an abstention
 
 When Slice A abstains, it writes a pending record containing the missing fields, the question asked, the correlation key (Slack `thread_ts` or email `In-Reply-To`), and the partial extraction — then exits. The clarification arrives as a separate inbound event and is matched back by correlation key. Resuming re-runs only validation and emit: the text was already classified and extracted, and re-running the model calls would be both wasted spend and non-deterministic.
@@ -302,7 +308,7 @@ Smaller, named: concurrent reorgs on the same CC (last-write-wins in a prototype
 - Volume is tens of reorgs per quarter — an extra classify call is cheap; auditability is not.
 - At least one downstream system **has no API**; that step is `manual_entry`.
 - Graph **contents** will come from FP&A and HR Ops interviews, not from engineering inventing the checklist.
-- Closed-period / retroactive reorgs are out of the first graph until Controllership defines the rule.
+- Retroactive (past-dated) reorgs are **flagged and still emit** today (fixture 10). What is deferred is the narrower case where a retroactive date falls in an already-**closed** period — that stays out of the first graph until Controllership defines the rule.
 
 ### Open before the business can rely on it
 

@@ -15,9 +15,9 @@ This system turns that message into a **validated ChangeSet** ("what changed"), 
 1. **Split capture from propagation.** Slice A = intake → ChangeSet. Slice B = ordered writes. The company's real problem is *order*, not parsing — so order is a **data artifact**, not something a model re-derives each run.
 2. **The model returns values; code decides actions.** Every model call is a forced-tool call against a closed schema. No model call has a side-effect tool — so a prompt injection has nothing to reach.
 
-### Brief constraints → what we did
+### Brief constraints → design response
 
-| Constraint | What we did |
+| Constraint | Design response |
 | --- | --- |
 | Reorgs arrive as **freeform text**; no structured event to subscribe to. | Envelope `{ message_id, source, sender, received_at, text }`. `text` is untrusted. Fixtures stand in for connectors. |
 | At least one target system **has no API**; a human keys it. | Slice B `mode: manual_entry`: a field-level work order until a human `attest`s. |
@@ -81,6 +81,9 @@ Building blocks: **prompt chaining** (classify, then extract) and **forced tool 
 | **EMITTED** | Structural ChangeSet complete and in scope. |
 
 ```mermaid
+---
+title: "Slice A — intake pipeline"
+---
 flowchart TD
   env[Envelope] --> trust[trust]
   trust -->|unauthorized| rejected([REJECTED])
@@ -95,7 +98,7 @@ flowchart TD
   route -->|in scope| emitted([EMITTED])
 ```
 
-*Figure 2. Classify and extract are the only model calls (forced-tool); every other node is code.*
+*Figure 2. **Slice A — intake.** Classify and extract are the only model calls (forced-tool); every other node is code.*
 
 An abstention persists a **pending record** (missing fields + the question + a correlation key), keyed by a deterministic `change_id` (`sha256(message_id)`), and resumes at **validate** — the text was already classified and extracted. This is intake state, not durable execution: in production it belongs on Temporal/Step Functions, which would replace the pending *file*, not the design.
 
@@ -111,6 +114,9 @@ The graph is **data**, not a prompt:
 - **Graph contents come from FP&A/HR Ops interviews**, not from engineering inventing the checklist. Engineering owns the schema, orchestrator, and gating.
 
 ```mermaid
+---
+title: "Slice B — propagation graph"
+---
 flowchart TD
   changeset[EMITTED ChangeSet] --> gl[Ensure cost centre exists in GL] --> hr[Update HR — manager, CC, headcount]
   subgraph human [Human]
@@ -120,7 +126,7 @@ flowchart TD
   hr --> attest --> plan --> recon[Reconciliation read-back]
 ```
 
-*Figure 3. Example graph for one team move (`node src/cli.js propagate`). Edges mean "must complete before." `manual_entry` exists because the planning tool has no API; attestation is a control. Adapters are stubs — they log the payload they would send.*
+*Figure 3. **Slice B — propagation.** Example graph for one team move (`node src/cli.js propagate`). Edges mean "must complete before." `manual_entry` exists because the planning tool has no API; attestation is a control. Adapters are stubs — they log the payload they would send.*
 
 Write principles: **absolute values, never deltas** (`setHeadcount(org, 16)` is retry-safe; `+6` corrupts). **Prefer loud failure** (double-counted headcount shows up in a rollup; orphaned headcount looks fine until close). Re-runs are idempotent (`change_id:step_id` never executes twice). Approval is an **event** (`approval_recorded`, actor + timestamp), not a resting status.
 
@@ -131,13 +137,13 @@ Not every step. Controls and missing APIs stay; capture guesses do not get rubbe
 | Step | Human? | Where it lives |
 | --- | --- | --- |
 | Who may submit | No — **allowlist** | `checkTrust` (code), before any model call |
-| Incomplete / unclear request | **Clarification**, not approval | Pending record → ops owner (Slack task in prod) |
+| Incomplete / unclear request | **Asks a specific question, waits** (not approval) | Pending record via `pending`/`answer` → ops owner (Slack task in prod) |
 | Compensation on the request | Yes, **not here** | **ROUTED_OUT** to comp review |
 | Cost centre exists in GL | Yes — **control** | Graph field: `awaiting_attestation` → named owner |
 | Planning tool (no API) | Human **is** the write | `mode: manual_entry` until attested |
 | After any write | Attestation is a **claim** | Reconciliation read-back: did the value land? |
 
-The submitter (HRBP who sent the message) has the missing fact; the **ops owner** (who holds the checklist today) gets the task with a `change_id` and chases it. Same staffing as today — the difference is the incomplete request is now a tracked task, not a message that died in a channel. If comp had to be in scope, it would use the **same `manual_entry` mechanism** with a comp approver — never a salary field on the automated path.
+The submitter (the HR Business Partner, or HRBP, who sent the message) has the missing fact; the **ops owner** (who holds the checklist today) gets the task with a `change_id` and chases it. Same staffing as today — the difference is the incomplete request is now a tracked task, not a message that died in a channel. If comp had to be in scope, it would use the **same `manual_entry` mechanism** with a comp approver — never a salary field on the automated path.
 
 ### 3.5 Prompt injection
 
@@ -153,9 +159,9 @@ Handled by **containment**, not a detector. Classify/extract can only emit value
 | Alternative | Why not |
 | --- | --- |
 | **One model call that "handles the reorg"** | Mixes authorization, PII, extraction, and side effects; injection gets an action surface; can't regression-test pieces. |
-| **Tool-loop agent picks propagation order** | Order is physically constrained and must be auditable. Nondeterministic execution *is* the failure mode we're replacing. |
+| **Tool-loop agent picks propagation order** | Order is physically constrained and must be auditable. Nondeterministic execution *is* the failure mode this replaces. |
 | **n8n / low-code workflow** | Fine for glue. The judgment here is trust boundaries, closed schemas, and a declared graph — more reviewable as a script with fixtures. |
-| **Write compensation in this pipeline** | Requires cleartext salary in memory and payloads plus a second approval chain. Tokenize-and-discard only works if we never write it. |
+| **Write compensation in this pipeline** | Requires cleartext salary in memory and payloads plus a second approval chain. Tokenize-and-discard only works if salary is never written. |
 | **Model confidence as the gate** | Not auditable, not fixture-testable. Gate on required fields instead. |
 | **Two outcomes (pass/fail)** | "Not authorized," "missing a date," and "belongs in comp review" are different events. HR wouldn't use a parser that only says *rejected*. |
 
